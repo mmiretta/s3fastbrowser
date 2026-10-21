@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}S3FastBrowser{% endblock %}</title>
+    <script>
+        // Apply saved theme before first paint (no flash). Default: dark.
+        (function () {
+            try {
+                var t = localStorage.getItem("s3fb-theme") || "dark";
+                document.documentElement.setAttribute("data-theme", t);
+            } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+        })();
+    </script>
+    <!-- Vendored locally so the browser works fully air-gapped (no CDN/font fetches). -->
+    <link href="/static/vendor/fonts/fonts.css" rel="stylesheet"/>
+    <link href="/static/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ─── Design tokens ─── */
+        :root {
+            --fb-bg:           #06080f;
+            --fb-bg-alt:       #080b16;
+            --fb-card:         #0a0d1a;
+            --fb-card-hover:   #0e1120;
+            --fb-amber:        #f5a623;
+            --fb-amber-dim:    rgba(245,166,35,.1);
+            --fb-amber-border: rgba(245,166,35,.25);
+            --fb-text:         #f0f2f8;
+            --fb-text-2:       #7880a0;
+            --fb-muted:        #5a6280;
+            --fb-dimmer:       #384060;
+            --fb-border:       rgba(255,255,255,.06);
+            --fb-border-md:    rgba(255,255,255,.1);
+            --fb-green:        #34d399;
+            --fb-blue:         #63b3ed;
+            --fb-red:          #f87171;
+            --bs-primary:             #f5a623;
+            --bs-primary-rgb:         245,166,35;
+            --bs-success:             #34d399;
+            --bs-success-rgb:         52,211,153;
+            --bs-danger:              #f87171;
+            --bs-danger-rgb:          248,113,113;
+            --bs-body-bg:             #06080f;
+            --bs-body-color:          #e8eaf0;
+            --bs-border-color:        rgba(255,255,255,.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { background: var(--fb-bg) !important; color: var(--fb-text) !important; font-family: 'DM Sans', sans-serif !important; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--fb-bg); }
+        ::-webkit-scrollbar-thumb { background: #1e2338; border-radius: 3px; }
+
+        /* NAV */
+        .fb-nav {
+            background: rgba(6,8,15,.96) !important;
+            backdrop-filter: blur(18px);
+            border-bottom: 1px solid var(--fb-border);
+            padding: 0 1.5rem;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .fb-nav .brand {
+            display: flex; align-items: center; gap: 10px;
+            text-decoration: none; color: var(--fb-text) !important;
+            font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: .95rem;
+        }
+        .fb-nav .brand .dot { color: var(--fb-amber); }
+        .fb-nav .brand .ver {
+            font-size: .68rem; font-weight: 500; color: var(--fb-amber);
+            background: var(--fb-amber-dim); border: 1px solid var(--fb-amber-border);
+            padding: .15rem .45rem; border-radius: 100px; letter-spacing: .04em; margin-left: 2px;
+        }
+        .fb-nav .nav-actions { display: flex; align-items: center; gap: .5rem; }
+
+        /* CARDS */
+        .card { background: var(--fb-card) !important; border: 1px solid var(--fb-border) !important; border-radius: 12px !important; }
+        .card-header { background: var(--fb-card-hover) !important; border-bottom: 1px solid var(--fb-border) !important; color: var(--fb-text) !important; font-family: 'Space Grotesk', sans-serif; }
+        .card-body { background: transparent !important; }
+
+        /* BUTTONS */
+        .btn-primary { background: var(--fb-amber) !important; border-color: var(--fb-amber) !important; color: #06080f !important; font-weight: 600; border-radius: 8px; transition: transform .15s, box-shadow .15s; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,166,35,.35) !important; background: var(--fb-amber) !important; }
+        .btn-outline-primary { border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; border-radius: 8px; }
+        .btn-outline-primary:hover { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; }
+        .btn-secondary { background: rgba(255,255,255,.07) !important; border-color: var(--fb-border-md) !important; color: #c0c8e0 !important; border-radius: 8px; }
+        .btn-outline-secondary { border-color: rgba(255,255,255,.12) !important; color: var(--fb-text-2) !important; border-radius: 8px; }
+        .btn-outline-secondary:hover { background: rgba(255,255,255,.06) !important; color: var(--fb-text) !important; border-color: rgba(255,255,255,.2) !important; }
+        .btn-outline-light { border-color: rgba(255,255,255,.15) !important; color: #c0c8e0 !important; border-radius: 8px; }
+        .btn-outline-light:hover { background: rgba(255,255,255,.07) !important; color: var(--fb-text) !important; border-color: rgba(255,255,255,.25) !important; }
+        .btn-success { background: var(--fb-green) !important; border-color: var(--fb-green) !important; color: #06080f !important; font-weight: 600; border-radius: 8px; }
+        .btn-danger { background: rgba(248,113,113,.12) !important; border-color: rgba(248,113,113,.35) !important; color: var(--fb-red) !important; border-radius: 8px; }
+        .btn-danger:hover { background: rgba(248,113,113,.22) !important; }
+
+        /* FORMS */
+        .form-control, .form-select { background: var(--fb-bg-alt) !important; border: 1px solid var(--fb-border-md) !important; color: var(--fb-text) !important; border-radius: 8px; }
+        .form-control:focus, .form-select:focus { border-color: var(--fb-amber) !important; box-shadow: 0 0 0 3px rgba(245,166,35,.18) !important; background: var(--fb-bg-alt) !important; color: var(--fb-text) !important; }
+        .form-control::placeholder { color: var(--fb-muted) !important; }
+        .form-label { color: var(--fb-text-2); font-size: .875rem; margin-bottom: .35rem; }
+        .form-text { color: var(--fb-muted) !important; font-size: .78rem; }
+        .form-check-input:checked { background-color: var(--fb-amber) !important; border-color: var(--fb-amber) !important; }
+        .form-check-input { background-color: var(--fb-bg-alt) !important; border-color: var(--fb-border-md) !important; }
+        .form-range::-webkit-slider-thumb { background: var(--fb-amber); }
+        .form-range::-webkit-slider-runnable-track { background: rgba(255,255,255,.1); }
+        .input-group-text { background: var(--fb-card-hover) !important; border-color: var(--fb-border-md) !important; color: var(--fb-text-2) !important; }
+
+        /* MODALS */
+        .modal-content { background: var(--fb-card) !important; border: 1px solid var(--fb-border-md) !important; border-radius: 14px !important; }
+        .modal-header { background: var(--fb-card-hover) !important; border-bottom: 1px solid var(--fb-border) !important; border-radius: 14px 14px 0 0 !important; }
+        .modal-footer { border-top: 1px solid var(--fb-border) !important; background: var(--fb-card-hover) !important; border-radius: 0 0 14px 14px !important; }
+        .modal-title { color: var(--fb-text) !important; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+        .modal-body { color: var(--fb-text-2); }
+        .btn-close { filter: invert(1) opacity(.5); }
+        .btn-close:hover { filter: invert(1) opacity(.9); }
+
+        /* TABLES */
+        .table { color: #c8cee8 !important; }
+        .table > :not(caption) > * > * { background-color: transparent; border-bottom-color: var(--fb-border); color: #c8cee8; }
+        .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,.02) !important; color: #c8cee8 !important; }
+        .table { --bs-table-striped-color: #c8cee8; --bs-table-hover-color: #c8cee8; --bs-table-active-color: #c8cee8; }
+        .table-hover > tbody > tr:hover > * { background-color: rgba(245,166,35,.05) !important; }
+        thead th { color: var(--fb-text-2) !important; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; font-family: 'Space Grotesk', sans-serif; }
+
+        /* LIST GROUP */
+        .list-group-item { background: var(--fb-card) !important; border-color: var(--fb-border) !important; color: #c8cee8 !important; }
+        .list-group-item.active { background: var(--fb-amber-dim) !important; border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; }
+        .list-group-item:hover:not(.active) { background: var(--fb-card-hover) !important; }
+
+        /* BREADCRUMB */
+        .breadcrumb { background: transparent; margin: 0; }
+        .breadcrumb-item + .breadcrumb-item::before { color: var(--fb-muted); }
+        .breadcrumb-item a { color: var(--fb-amber) !important; text-decoration: none; }
+        .breadcrumb-item a:hover { color: var(--fb-text) !important; }
+        .breadcrumb-item.active { color: var(--fb-text); }
+
+        /* BADGES */
+        .badge.bg-primary   { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; border: 1px solid var(--fb-amber-border); }
+        .badge.bg-success   { background: rgba(52,211,153,.12) !important; color: var(--fb-green) !important; }
+        .badge.bg-secondary { background: rgba(136,144,168,.12) !important; color: var(--fb-text-2) !important; }
+        .badge.bg-warning   { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; }
+        .badge.bg-danger    { background: rgba(248,113,113,.12) !important; color: var(--fb-red) !important; }
+        .badge.bg-dark      { background: rgba(255,255,255,.06) !important; color: #c0c8e0 !important; }
+
+        /* NAV TABS */
+        .nav-tabs { border-bottom-color: var(--fb-border) !important; }
+        .nav-tabs .nav-link { color: var(--fb-text-2); border-color: transparent; }
+        .nav-tabs .nav-link.active { background: var(--fb-card); border-color: var(--fb-border) var(--fb-border) var(--fb-card); color: var(--fb-amber); }
+        .nav-tabs .nav-link:hover:not(.active) { border-color: var(--fb-border); color: var(--fb-text); }
+
+        /* ALERTS */
+        .alert-success { background: rgba(52,211,153,.1) !important; border-color: rgba(52,211,153,.25) !important; color: var(--fb-green) !important; }
+        .alert-danger  { background: rgba(248,113,113,.1) !important; border-color: rgba(248,113,113,.25) !important; color: var(--fb-red) !important; }
+        .alert-warning { background: var(--fb-amber-dim) !important; border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; }
+        .alert-info    { background: rgba(99,179,237,.1) !important; border-color: rgba(99,179,237,.25) !important; color: var(--fb-blue) !important; }
+
+        /* MISC */
+        .spinner-border.text-primary { color: var(--fb-amber) !important; }
+        .bg-light      { background: var(--fb-card-hover) !important; }
+        .bg-dark       { background: var(--fb-bg-alt) !important; }
+        .text-muted    { color: var(--fb-muted) !important; }
+        .text-dark     { color: var(--fb-text) !important; }
+        .border-bottom { border-bottom-color: var(--fb-border) !important; }
+        hr             { border-color: var(--fb-border); opacity: 1; }
+        code           { color: var(--fb-amber) !important; }
+        textarea.font-monospace { color: var(--fb-text) !important; }
+        .dropdown-menu { background: var(--fb-card) !important; border-color: var(--fb-border) !important; }
+        .dropdown-item { color: var(--fb-text-2) !important; }
+        .dropdown-item:hover { background: var(--fb-card-hover) !important; color: var(--fb-text) !important; }
+
+        /* FOOTER */
+        .fb-footer {
+            background: var(--fb-bg);
+            border-top: 1px solid var(--fb-border);
+            padding: 1rem 1.5rem;
+            text-align: center;
+            color: var(--fb-dimmer);
+            font-size: .78rem;
+            margin-top: 3rem;
+        }
+        .fb-footer a { color: var(--fb-amber) !important; text-decoration: none; }
+
+        /* STATUS DOT */
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .status-connected    { background: var(--fb-green); box-shadow: 0 0 6px rgba(52,211,153,.6); }
+        .status-disconnected { background: var(--fb-muted); }
+
+        /* ─── Light theme ─── applied when <html data-theme="light">. The dark
+           palette above is the default. We redefine the design-system + Bootstrap
+           variables, then fix the handful of rules that hardcode dark text/bg. */
+        :root[data-theme="light"] {
+            --fb-bg:           #f6f8fa;
+            --fb-bg-alt:       #eef1f5;
+            --fb-card:         #ffffff;
+            --fb-card-hover:   #f0f2f6;
+            --fb-amber:        #d98a00;
+            --fb-amber-dim:    rgba(217,138,0,.12);
+            --fb-amber-border: rgba(217,138,0,.4);
+            --fb-text:         #1f2328;
+            --fb-text-2:       #4a5169;
+            --fb-muted:        #6b7280;
+            --fb-dimmer:       #9aa1b5;
+            --fb-border:       rgba(0,0,0,.1);
+            --fb-border-md:    rgba(0,0,0,.16);
+            --fb-green:        #1a7f37;
+            --fb-blue:         #0969da;
+            --fb-red:          #cf222e;
+            --bs-primary:      #d98a00;
+            --bs-primary-rgb:  217,138,0;
+            --bs-success:      #1a7f37;
+            --bs-success-rgb:  26,127,55;
+            --bs-danger:       #cf222e;
+            --bs-danger-rgb:   207,34,46;
+            --bs-body-bg:      #f6f8fa;
+            --bs-body-color:   #1f2328;
+            --bs-border-color: rgba(0,0,0,.1);
+        }
+        [data-theme="light"] ::-webkit-scrollbar-thumb { background: #c0c6d4; }
+        [data-theme="light"] .fb-nav { background: rgba(255,255,255,.92) !important; }
+        [data-theme="light"] .btn-primary,
+        [data-theme="light"] .btn-success { color: #fff !important; }
+        [data-theme="light"] .btn-secondary { background: rgba(0,0,0,.05) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .btn-outline-secondary,
+        [data-theme="light"] .btn-outline-light { color: var(--fb-text-2) !important; }
+        [data-theme="light"] .btn-outline-light:hover,
+        [data-theme="light"] .btn-outline-secondary:hover { background: rgba(0,0,0,.05) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .table,
+        [data-theme="light"] .table > :not(caption) > * > *,
+        [data-theme="light"] .list-group-item { color: var(--fb-text) !important; }
+        [data-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(0,0,0,.03) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .table { --bs-table-striped-color: var(--fb-text); --bs-table-hover-color: var(--fb-text); --bs-table-active-color: var(--fb-text); }
+        [data-theme="light"] .table-hover > tbody > tr:hover > * { background-color: rgba(217,138,0,.08) !important; }
+        [data-theme="light"] .btn-close { filter: none; }
+        [data-theme="light"] .bg-dark { background: var(--fb-bg-alt) !important; }
+        [data-theme="light"] .bg-light { background: var(--fb-card-hover) !important; }
+        [data-theme="light"] textarea.font-monospace { color: var(--fb-text) !important; }
+
+        /* Theme toggle button in the nav */
+        #theme-toggle {
+            background: transparent; border: 1px solid var(--fb-border-md);
+            color: var(--fb-text-2); border-radius: 8px; padding: .3rem .55rem;
+            line-height: 1; font-size: .95rem; cursor: pointer;
+        }
+        #theme-toggle:hover { color: var(--fb-text); border-color: var(--fb-amber-border); }
+    </style>
+    {% block styles %}{% endblock %}
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+
+<body>
+    <div class="container-fluid p-0">
+        <!-- NAV -->
+        <nav class="fb-nav">
+            <a class="brand" href="/">
+                <svg viewBox="0 0 64 64" width="28" height="28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="2" y="2" width="60" height="60" rx="14" fill="#101626" stroke="var(--fb-amber)" stroke-width="3"/>
+                    <path d="M16 22h32l-4 26a4 4 0 0 1-4 3H24a4 4 0 0 1-4-3z" fill="none" stroke="var(--fb-amber)" stroke-width="3.5" stroke-linejoin="round"/>
+                    <ellipse cx="32" cy="22" rx="16" ry="5" fill="#101626" stroke="var(--fb-amber)" stroke-width="3.5"/>
+                    <path d="M35 28l-7 10h6l-3 8 8-11h-6z" fill="var(--fb-amber)"/>
+                </svg>
+                S3FastBrowser<span class="dot">.</span>
+                <span class="ver">v{{ app_version }}</span>
+            </a>
+            <div class="nav-actions">
+                <button id="theme-toggle" type="button" title="Toggle light / dark theme" aria-label="Toggle theme"><i class="fas fa-moon"></i></button>
+                <a href="/settings" class="btn btn-outline-light btn-sm">
+                    <i class="fas fa-cog"></i> Settings
+                </a>
+                <button class="btn btn-outline-light btn-sm" onclick="showAbout()">
+                    <i class="fas fa-info-circle"></i> About
+                </button>
+                {% if auth_enabled %}
+                <a class="btn btn-outline-light btn-sm" href="/logout" title="Sign out ({{ auth_user }})">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+                {% endif %}
+            </div>
+        </nav>
+
+        {% block content %}{% endblock %}
+
+        <footer class="fb-footer">
+            S3FastBrowser v{{ app_version }} &nbsp;·&nbsp;
+            <a href="https://github.com/mmiretta/s3fastbrowser" target="_blank" rel="noopener">GitHub</a> &nbsp;·&nbsp;
+            <a href="#" onclick="showAbout(); return false;">About</a>
+        </footer>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal fade" id="aboutModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <svg viewBox="0 0 64 64" width="20" height="20" style="margin-right:8px;vertical-align:middle" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="2" y="2" width="60" height="60" rx="14" fill="#101626" stroke="var(--fb-amber)" stroke-width="3"/>
+                    <path d="M16 22h32l-4 26a4 4 0 0 1-4 3H24a4 4 0 0 1-4-3z" fill="none" stroke="var(--fb-amber)" stroke-width="3.5" stroke-linejoin="round"/>
+                    <ellipse cx="32" cy="22" rx="16" ry="5" fill="#101626" stroke="var(--fb-amber)" stroke-width="3.5"/>
+                    <path d="M35 28l-7 10h6l-3 8 8-11h-6z" fill="var(--fb-amber)"/>
+                </svg>
+                        S3FastBrowser
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="padding:1.5rem">
+                    <div style="text-align:center;margin-bottom:1.5rem">
+                        <div style="font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;color:var(--fb-text)">S3FastBrowser</div>
+                        <div style="color:var(--fb-muted);font-size:.85rem;margin-top:.3rem">Fast S3-compatible storage browser</div>
+                        <div style="display:inline-flex;align-items:center;gap:6px;background:var(--fb-amber-dim);border:1px solid var(--fb-amber-border);border-radius:100px;padding:.25rem .8rem;margin-top:.8rem;font-size:.7rem;font-weight:600;color:var(--fb-amber);letter-spacing:.06em;text-transform:uppercase">
+                            <span style="width:5px;height:5px;border-radius:50%;background:var(--fb-amber);display:inline-block"></span>
+                            Version {{ app_version }}
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+                        <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem">
+                            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--fb-amber);margin-bottom:.4rem;font-weight:600">Stack</div>
+                            <div style="font-size:.82rem;color:var(--fb-text-2)">Flask · boto3 · Gunicorn</div>
+                        </div>
+                        <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem">
+                            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--fb-amber);margin-bottom:.4rem;font-weight:600">License</div>
+                            <div style="font-size:.82rem;color:var(--fb-text-2)">MIT</div>
+                        </div>
+                    </div>
+                    <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem;display:flex;align-items:center;gap:12px">
+                        <div style="width:36px;height:36px;border-radius:50%;background:var(--fb-amber-dim);border:1px solid var(--fb-amber-border);display:flex;align-items:center;justify-content:center;color:var(--fb-amber);flex-shrink:0">
+                            <i class="fas fa-user" style="font-size:.85rem"></i>
+                        </div>
+                        <div>
+                            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.9rem;color:var(--fb-text)">Mariano Miretta</div>
+                            <div style="font-size:.75rem;color:var(--fb-muted)">Author · open source under the MIT license</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                    <a href="https://github.com/mmiretta/s3fastbrowser" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="fab fa-github"></i> Project page</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+    <script>
+        function showAbout() {
+            new bootstrap.Modal(document.getElementById('aboutModal')).show();
+        }
+        // Theme toggle (light / dark), persisted in localStorage; default dark.
+        function sfbCurrentTheme() {
+            return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+        }
+        function sfbApplyTheme(theme) {
+            document.documentElement.setAttribute("data-theme", theme);
+            try { localStorage.setItem("s3fb-theme", theme); } catch (e) {}
+            var btn = document.getElementById("theme-toggle");
+            if (btn) {
+                btn.innerHTML = theme === "light" ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+                btn.title = theme === "light" ? "Switch to dark theme" : "Switch to light theme";
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            sfbApplyTheme(sfbCurrentTheme());
+            var tt = document.getElementById("theme-toggle");
+            if (tt) tt.addEventListener("click", function () {
+                sfbApplyTheme(sfbCurrentTheme() === "light" ? "dark" : "light");
+            });
+            [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+                .map(el => new bootstrap.Tooltip(el));
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

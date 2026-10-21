@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/
+
+# Local configuration and runtime data
+.env
+.env.*
+!.env.example
+data/
+*.log
+flask_session/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Archives
+*.tar
+*.tgz
+*.tar.gz

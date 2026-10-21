@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in · S3FastBrowser</title>
+    <script>
+        (function () {
+            try {
+                document.documentElement.setAttribute("data-theme", localStorage.getItem("s3fb-theme") || "dark");
+            } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+        })();
+    </script>
+    <link href="/static/vendor/fonts/fonts.css" rel="stylesheet"/>
+    <link href="/static/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --fb-bg: #06080f; --fb-card: #0a0d1a; --fb-bg-alt: #080b16; --fb-amber: #f5a623;
+            --fb-text: #f0f2f8; --fb-text-2: #7880a0; --fb-muted: #5a6280; --fb-red: #f87171;
+            --fb-border: rgba(255,255,255,.08);
+        }
+        :root[data-theme="light"] {
+            --fb-bg: #f6f8fa; --fb-card: #ffffff; --fb-bg-alt: #eef1f5; --fb-amber: #d98a00;
+            --fb-text: #1f2328; --fb-text-2: #4a5169; --fb-muted: #6b7280; --fb-red: #cf222e;
+            --fb-border: rgba(0,0,0,.12);
+        }
+        body { background: var(--fb-bg); color: var(--fb-text); font-family: 'DM Sans', sans-serif;
+               min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .login-card { width: 100%; max-width: 380px; background: var(--fb-card); border: 1px solid var(--fb-border);
+                      border-radius: 16px; padding: 2rem; }
+        .brand { display: flex; align-items: center; gap: 10px; justify-content: center; margin-bottom: 1.5rem;
+                 font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.15rem; }
+        .brand .dot { color: var(--fb-amber); }
+        .form-label { color: var(--fb-text-2); font-size: .85rem; }
+        .form-control { background: var(--fb-bg-alt) !important; border: 1px solid var(--fb-border) !important;
+                        color: var(--fb-text) !important; border-radius: 8px; }
+        .form-control:focus { border-color: var(--fb-amber) !important; box-shadow: 0 0 0 3px rgba(245,166,35,.18) !important; }
+        .btn-primary { background: var(--fb-amber) !important; border-color: var(--fb-amber) !important; color: #06080f !important;
+                       font-weight: 600; border-radius: 8px; }
+        .error { color: var(--fb-red); font-size: .85rem; margin-bottom: 1rem; }
+        .foot { text-align: center; color: var(--fb-muted); font-size: .75rem; margin-top: 1.25rem; }
+    </style>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+    <main class="login-card">
+        <div class="brand">
+            <svg viewBox="0 0 64 64" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="2" y="2" width="60" height="60" rx="14" fill="#101626" stroke="var(--fb-amber)" stroke-width="3"/>
+                <path d="M16 22h32l-4 26a4 4 0 0 1-4 3H24a4 4 0 0 1-4-3z" fill="none" stroke="var(--fb-amber)" stroke-width="3.5" stroke-linejoin="round"/>
+                <ellipse cx="32" cy="22" rx="16" ry="5" fill="#101626" stroke="var(--fb-amber)" stroke-width="3.5"/>
+                <path d="M35 28l-7 10h6l-3 8 8-11h-6z" fill="var(--fb-amber)"/>
+            </svg>
+            <span>S3FastBrowser<span class="dot">.</span></span>
+        </div>
+        {% if error %}<div class="error" role="alert"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
+        <form method="post" autocomplete="on">
+            <div class="mb-3">
+                <label class="form-label" for="username">Username</label>
+                <input class="form-control" id="username" name="username" autocomplete="username" required autofocus
+                       {% if demo_mode %}value="demo"{% endif %}>
+            </div>
+            <div class="mb-4">
+                <label class="form-label" for="password">Password</label>
+                <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="d-grid">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-sign-in-alt"></i> Sign in</button>
+            </div>
+        </form>
+        {% if demo_mode %}<div class="foot">Demo mode: user <code>demo</code>, password <code>demo</code>.</div>{% endif %}
+        <div class="foot">S3FastBrowser v{{ app_version }}</div>
+    </main>
+</body>
+</html>

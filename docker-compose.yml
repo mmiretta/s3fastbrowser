@@ -1,0 +1,76 @@
+# S3FastBrowser
+#
+#   docker compose up -d                                  # the app, on 127.0.0.1:5001
+#   docker compose --profile demo up -d s3fastbrowser-demo  # demo with sample data, on 127.0.0.1:5002
+#
+# Configuration lives in .env (copy .env.example). See docs/DEPLOY.md.
+
+services:
+  s3fastbrowser:
+    build: .
+    image: s3fastbrowser:${S3FB_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      # Bound to localhost by default. Publish it to the network only behind a
+      # TLS reverse proxy and with authentication enabled (docs/DEPLOY.md).
+      - "${S3FB_BIND:-127.0.0.1}:${S3FB_PORT:-5001}:5001"
+    volumes:
+      - s3fb-data:/data
+
+  # ------------------------------------------------------------------ demo
+  # A self-contained demo: a local MinIO, a one-shot job that fills it with
+  # generated sample files, and an S3FastBrowser instance in demo mode.
+  minio:
+    profiles: ["demo"]
+    # Community build of MinIO (the upstream project no longer publishes
+    # container images). Any S3-compatible server works; override with
+    # S3FB_DEMO_MINIO_IMAGE.
+    image: ${S3FB_DEMO_MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: demo-access-key
+      MINIO_ROOT_PASSWORD: demo-secret-key
+    volumes:
+      - minio-demo-data:/data
+
+  demo-seed:
+    profiles: ["demo"]
+    build: ./demo
+    image: s3fastbrowser-demo-seed:latest
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: demo-access-key
+      S3_SECRET_KEY: demo-secret-key
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+
+  s3fastbrowser-demo:
+    profiles: ["demo"]
+    build: .
+    image: s3fastbrowser:${S3FB_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      S3FB_DEMO: "true"
+      S3FB_DEMO_ENDPOINT: http://minio:9000
+      S3FB_DEMO_ACCESS_KEY: demo-access-key
+      S3FB_DEMO_SECRET_KEY: demo-secret-key
+      # The browser cannot reach http://minio:9000, so downloads go through the app.
+      S3FB_DOWNLOAD_MODE: proxy
+      S3FB_ALLOWED_ENDPOINTS: http://minio:9000
+      S3FB_AUTH_USERNAME: demo
+      S3FB_AUTH_PASSWORD: demo
+      SECRET_KEY: demo-only-not-secret
+    ports:
+      - "${S3FB_DEMO_BIND:-127.0.0.1}:${S3FB_DEMO_PORT:-5002}:5001"
+    depends_on:
+      demo-seed:
+        condition: service_completed_successfully
+
+volumes:
+  s3fb-data:
+  minio-demo-data:

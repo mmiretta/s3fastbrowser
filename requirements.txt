@@ -1,0 +1,9 @@
+Flask==3.0.3
+Werkzeug==3.0.6
+Flask-Session==0.8.0
+cachelib==0.13.0
+Flask-Cors==5.0.0
+python-dotenv==1.0.1
+boto3==1.35.99
+gunicorn==23.0.0
+openpyxl==3.1.5

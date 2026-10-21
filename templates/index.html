@@ -1,0 +1,3222 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3FastBrowser</title>
+    <script>
+        // Apply saved theme before first paint (no flash). Default: dark.
+        (function () {
+            try {
+                var t = localStorage.getItem("s3fb-theme") || "dark";
+                document.documentElement.setAttribute("data-theme", t);
+            } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+        })();
+    </script>
+    <!-- Vendored locally so the browser works fully air-gapped (no CDN/font fetches). -->
+    <link href="/static/vendor/fonts/fonts.css" rel="stylesheet"/>
+    <link href="/static/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ─── Design tokens ─── */
+        :root {
+            --fb-bg:           #06080f;
+            --fb-bg-alt:       #080b16;
+            --fb-card:         #0a0d1a;
+            --fb-card-hover:   #0e1120;
+            --fb-amber:        #f5a623;
+            --fb-amber-dim:    rgba(245,166,35,.1);
+            --fb-amber-border: rgba(245,166,35,.25);
+            --fb-text:         #f0f2f8;
+            --fb-text-2:       #7880a0;
+            --fb-muted:        #5a6280;
+            --fb-dimmer:       #384060;
+            --fb-border:       rgba(255,255,255,.06);
+            --fb-border-md:    rgba(255,255,255,.1);
+            --fb-green:        #34d399;
+            --fb-blue:         #63b3ed;
+            --fb-red:          #f87171;
+            --bs-primary:             #f5a623;
+            --bs-primary-rgb:         245,166,35;
+            --bs-success:             #34d399;
+            --bs-success-rgb:         52,211,153;
+            --bs-danger:              #f87171;
+            --bs-danger-rgb:          248,113,113;
+            --bs-body-bg:             #06080f;
+            --bs-body-color:          #e8eaf0;
+            --bs-border-color:        rgba(255,255,255,.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { background: var(--fb-bg) !important; color: var(--fb-text) !important; font-family: 'DM Sans', sans-serif !important; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--fb-bg); }
+        ::-webkit-scrollbar-thumb { background: #1e2338; border-radius: 3px; }
+
+        /* NAV */
+        .fb-nav {
+            background: rgba(6,8,15,.96) !important;
+            backdrop-filter: blur(18px);
+            border-bottom: 1px solid var(--fb-border);
+            padding: 0 1.5rem;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .fb-nav .brand { display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fb-text)!important;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem; }
+        .fb-nav .brand .dot { color: var(--fb-amber); }
+        .fb-nav .brand .ver { font-size:.68rem;font-weight:500;color:var(--fb-amber);background:var(--fb-amber-dim);border:1px solid var(--fb-amber-border);padding:.15rem .45rem;border-radius:100px;letter-spacing:.04em;margin-left:2px; }
+        .fb-nav .nav-actions { display:flex;align-items:center;gap:.5rem; }
+        .fb-nav .status-area { display:flex;align-items:center;gap:.75rem;font-size:.82rem;color:var(--fb-text-2); }
+
+        /* CARDS */
+        .card { background: var(--fb-card) !important; border: 1px solid var(--fb-border) !important; border-radius: 12px !important; }
+        .card-header { background: var(--fb-card-hover) !important; border-bottom: 1px solid var(--fb-border) !important; color: var(--fb-text) !important; font-family: 'Space Grotesk', sans-serif; }
+        .card-body { background: transparent !important; }
+
+        /* BUTTONS */
+        .btn-primary { background: var(--fb-amber) !important; border-color: var(--fb-amber) !important; color: #06080f !important; font-weight: 600; border-radius: 8px; transition: transform .15s, box-shadow .15s; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,166,35,.35) !important; background: var(--fb-amber) !important; }
+        .btn-outline-primary { border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; border-radius: 8px; }
+        .btn-outline-primary:hover { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; }
+        .btn-secondary { background: rgba(255,255,255,.07) !important; border-color: var(--fb-border-md) !important; color: #c0c8e0 !important; border-radius: 8px; }
+        .btn-outline-secondary { border-color: rgba(255,255,255,.12) !important; color: var(--fb-text-2) !important; border-radius: 8px; }
+        .btn-outline-secondary:hover { background: rgba(255,255,255,.06) !important; color: var(--fb-text) !important; border-color: rgba(255,255,255,.2) !important; }
+        .btn-outline-light { border-color: rgba(255,255,255,.15) !important; color: #c0c8e0 !important; border-radius: 8px; }
+        .btn-outline-light:hover { background: rgba(255,255,255,.07) !important; color: var(--fb-text) !important; border-color: rgba(255,255,255,.25) !important; }
+        .btn-success { background: var(--fb-green) !important; border-color: var(--fb-green) !important; color: #06080f !important; font-weight: 600; border-radius: 8px; }
+        .btn-danger { background: rgba(248,113,113,.12) !important; border-color: rgba(248,113,113,.35) !important; color: var(--fb-red) !important; border-radius: 8px; }
+        .btn-danger:hover { background: rgba(248,113,113,.22) !important; }
+        .btn-warning { background: var(--fb-amber-dim) !important; border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; border-radius: 8px; }
+        .btn-sm { font-size: .8rem; padding: .3rem .7rem; }
+
+        /* FORMS */
+        .form-control, .form-select { background: var(--fb-bg-alt) !important; border: 1px solid var(--fb-border-md) !important; color: var(--fb-text) !important; border-radius: 8px; }
+        .form-control:focus, .form-select:focus { border-color: var(--fb-amber) !important; box-shadow: 0 0 0 3px rgba(245,166,35,.18) !important; background: var(--fb-bg-alt) !important; color: var(--fb-text) !important; }
+        .form-control::placeholder { color: var(--fb-muted) !important; }
+        .form-label { color: var(--fb-text-2); font-size: .875rem; margin-bottom: .35rem; }
+        .form-text { color: var(--fb-muted) !important; font-size: .78rem; }
+        .form-check-input { background-color: var(--fb-bg-alt) !important; border-color: var(--fb-border-md) !important; }
+        .form-check-input:checked { background-color: var(--fb-amber) !important; border-color: var(--fb-amber) !important; }
+        .form-range::-webkit-slider-thumb { background: var(--fb-amber); }
+        .form-range::-webkit-slider-runnable-track { background: rgba(255,255,255,.1); }
+        .input-group-text { background: var(--fb-card-hover) !important; border-color: var(--fb-border-md) !important; color: var(--fb-text-2) !important; }
+
+        /* MODALS */
+        .modal-content { background: var(--fb-card) !important; border: 1px solid var(--fb-border-md) !important; border-radius: 14px !important; }
+        .modal-header { background: var(--fb-card-hover) !important; border-bottom: 1px solid var(--fb-border) !important; border-radius: 14px 14px 0 0 !important; }
+        .modal-footer { border-top: 1px solid var(--fb-border) !important; background: var(--fb-card-hover) !important; border-radius: 0 0 14px 14px !important; }
+        .modal-title { color: var(--fb-text) !important; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+        .modal-body { color: var(--fb-text-2); }
+        .btn-close { filter: invert(1) opacity(.5); }
+        .btn-close:hover { filter: invert(1) opacity(.9); }
+        .btn-close-white { filter: invert(1) opacity(.7); }
+
+        /* TABLES */
+        .table { color: #c8cee8 !important; }
+        .table > :not(caption) > * > * { background-color: transparent; border-bottom-color: var(--fb-border); color: #c8cee8; }
+        .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,.02) !important; color: #c8cee8 !important; }
+        .table { --bs-table-striped-color: #c8cee8; --bs-table-hover-color: #c8cee8; --bs-table-active-color: #c8cee8; }
+        .table-hover > tbody > tr:hover > * { background-color: rgba(245,166,35,.05) !important; }
+        thead th { color: var(--fb-text-2) !important; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; font-family: 'Space Grotesk', sans-serif; }
+
+        /* LIST GROUP */
+        .list-group-item { background: var(--fb-card) !important; border-color: var(--fb-border) !important; color: #c8cee8 !important; transition: background .15s; }
+        .list-group-item.active { background: var(--fb-amber-dim) !important; border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; }
+        .list-group-item:hover:not(.active) { background: var(--fb-card-hover) !important; }
+
+        /* BREADCRUMB */
+        .breadcrumb { background: transparent; margin: 0; }
+        .breadcrumb-item + .breadcrumb-item::before { color: var(--fb-muted); }
+        .breadcrumb-item a { color: var(--fb-amber) !important; text-decoration: none; }
+        .breadcrumb-item a:hover { color: var(--fb-text) !important; }
+        .breadcrumb-item.active { color: var(--fb-text); }
+
+        /* BADGES */
+        .badge.bg-primary   { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; border: 1px solid var(--fb-amber-border); }
+        .badge.bg-success   { background: rgba(52,211,153,.12) !important; color: var(--fb-green) !important; }
+        .badge.bg-secondary { background: rgba(136,144,168,.12) !important; color: var(--fb-text-2) !important; }
+        .badge.bg-warning   { background: var(--fb-amber-dim) !important; color: var(--fb-amber) !important; }
+        .badge.bg-danger    { background: rgba(248,113,113,.12) !important; color: var(--fb-red) !important; }
+        .badge.bg-dark      { background: rgba(255,255,255,.06) !important; color: #c0c8e0 !important; }
+
+        /* NAV TABS */
+        .nav-tabs { border-bottom-color: var(--fb-border) !important; }
+        .nav-tabs .nav-link { color: var(--fb-text-2); border-color: transparent; }
+        .nav-tabs .nav-link.active { background: var(--fb-card); border-color: var(--fb-border) var(--fb-border) var(--fb-card); color: var(--fb-amber); }
+        .nav-tabs .nav-link:hover:not(.active) { border-color: var(--fb-border); color: var(--fb-text); }
+
+        /* ALERTS */
+        .alert-success { background: rgba(52,211,153,.1) !important; border-color: rgba(52,211,153,.25) !important; color: var(--fb-green) !important; }
+        .alert-danger  { background: rgba(248,113,113,.1) !important; border-color: rgba(248,113,113,.25) !important; color: var(--fb-red) !important; }
+        .alert-warning { background: var(--fb-amber-dim) !important; border-color: var(--fb-amber-border) !important; color: var(--fb-amber) !important; }
+        .alert-info    { background: rgba(99,179,237,.1) !important; border-color: rgba(99,179,237,.25) !important; color: var(--fb-blue) !important; }
+
+        /* MISC */
+        .spinner-border.text-primary { color: var(--fb-amber) !important; }
+        .bg-light      { background: var(--fb-card-hover) !important; }
+        .bg-dark       { background: var(--fb-bg-alt) !important; }
+        .text-muted    { color: var(--fb-muted) !important; }
+        .text-dark     { color: var(--fb-text) !important; }
+        .border-bottom { border-bottom-color: var(--fb-border) !important; }
+        hr             { border-color: var(--fb-border); opacity: 1; }
+        code           { color: var(--fb-amber) !important; }
+        textarea.font-monospace { color: var(--fb-text) !important; }
+        .dropdown-menu { background: var(--fb-card) !important; border-color: var(--fb-border) !important; }
+        .dropdown-item { color: var(--fb-text-2) !important; }
+        .dropdown-item:hover { background: var(--fb-card-hover) !important; color: var(--fb-text) !important; }
+
+        /* CONNECTION FORM */
+        .connection-form {
+            max-width: 600px;
+            margin: 48px auto;
+            padding: 2rem;
+            background: var(--fb-card);
+            border: 1px solid var(--fb-border);
+            border-radius: 16px;
+        }
+        .connection-form h2 { font-family: 'Space Grotesk', sans-serif; color: var(--fb-text); font-weight: 700; font-size: 1.4rem; }
+
+        /* STATUS */
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .status-connected    { background: var(--fb-green); box-shadow: 0 0 6px rgba(52,211,153,.6); }
+        .status-disconnected { background: var(--fb-muted); }
+
+        /* ACTION LOG */
+        #action-log {
+            max-height: 120px; overflow-y: auto; font-size: .85rem;
+            background: var(--fb-bg-alt) !important;
+            border: 1px solid var(--fb-border) !important;
+            border-radius: 8px; padding: 8px;
+            color: var(--fb-text-2); font-family: 'DM Sans', monospace;
+        }
+
+        /* UPLOAD DROP AREA */
+        #upload-drop-area {
+            border-color: var(--fb-amber-border) !important;
+            background: var(--fb-amber-dim);
+            border-radius: 10px !important;
+            color: var(--fb-text-2);
+        }
+        #upload-drop-area:hover { background: rgba(245,166,35,.15); }
+        #upload-drop-area .text-primary { color: var(--fb-amber) !important; }
+
+        /* TASKS PANEL */
+        #tasks-panel .card { background: var(--fb-card) !important; }
+        #tasks-list { background: var(--fb-bg-alt) !important; }
+
+        /* FOOTER */
+        footer.fb-footer {
+            background: var(--fb-bg);
+            border-top: 1px solid var(--fb-border);
+            padding: 1rem 1.5rem;
+            text-align: center;
+            color: var(--fb-dimmer);
+            font-size: .78rem;
+            margin-top: 2rem;
+        }
+        footer.fb-footer a { color: var(--fb-amber) !important; text-decoration: none; }
+
+        /* PRESET BUTTONS */
+        .preset-btn {
+            background: var(--fb-bg-alt);
+            border: 1px solid var(--fb-border);
+            color: var(--fb-text-2);
+            border-radius: 8px;
+            padding: .35rem .75rem;
+            font-size: .8rem;
+            cursor: pointer;
+            transition: border-color .15s, color .15s;
+            width: 100%;
+        }
+        .preset-btn:hover { border-color: var(--fb-amber-border); color: var(--fb-amber); }
+
+        .alert-sm { padding: 0.4rem 0.75rem; font-size: 0.82rem; margin-bottom: 0.5rem; }
+
+        /* ─── Light theme ─── applied when <html data-theme="light">. The dark
+           palette above is the default. We redefine the design-system + Bootstrap
+           variables, then fix the handful of rules that hardcode dark text/bg. */
+        :root[data-theme="light"] {
+            --fb-bg:           #f6f8fa;
+            --fb-bg-alt:       #eef1f5;
+            --fb-card:         #ffffff;
+            --fb-card-hover:   #f0f2f6;
+            --fb-amber:        #d98a00;
+            --fb-amber-dim:    rgba(217,138,0,.12);
+            --fb-amber-border: rgba(217,138,0,.4);
+            --fb-text:         #1f2328;
+            --fb-text-2:       #4a5169;
+            --fb-muted:        #6b7280;
+            --fb-dimmer:       #9aa1b5;
+            --fb-border:       rgba(0,0,0,.1);
+            --fb-border-md:    rgba(0,0,0,.16);
+            --fb-green:        #1a7f37;
+            --fb-blue:         #0969da;
+            --fb-red:          #cf222e;
+            --bs-primary:      #d98a00;
+            --bs-primary-rgb:  217,138,0;
+            --bs-success:      #1a7f37;
+            --bs-success-rgb:  26,127,55;
+            --bs-danger:       #cf222e;
+            --bs-danger-rgb:   207,34,46;
+            --bs-body-bg:      #f6f8fa;
+            --bs-body-color:   #1f2328;
+            --bs-border-color: rgba(0,0,0,.1);
+        }
+        [data-theme="light"] ::-webkit-scrollbar-thumb { background: #c0c6d4; }
+        [data-theme="light"] .fb-nav { background: rgba(255,255,255,.92) !important; }
+        [data-theme="light"] .btn-primary,
+        [data-theme="light"] .btn-success { color: #fff !important; }
+        [data-theme="light"] .btn-secondary { background: rgba(0,0,0,.05) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .btn-outline-secondary,
+        [data-theme="light"] .btn-outline-light { color: var(--fb-text-2) !important; }
+        [data-theme="light"] .btn-outline-light:hover,
+        [data-theme="light"] .btn-outline-secondary:hover { background: rgba(0,0,0,.05) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .table,
+        [data-theme="light"] .table > :not(caption) > * > *,
+        [data-theme="light"] .list-group-item { color: var(--fb-text) !important; }
+        [data-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(0,0,0,.03) !important; color: var(--fb-text) !important; }
+        [data-theme="light"] .table { --bs-table-striped-color: var(--fb-text); --bs-table-hover-color: var(--fb-text); --bs-table-active-color: var(--fb-text); }
+        [data-theme="light"] .table-hover > tbody > tr:hover > * { background-color: rgba(217,138,0,.08) !important; }
+        [data-theme="light"] .btn-close { filter: none; }
+        [data-theme="light"] .bg-dark { background: var(--fb-bg-alt) !important; }
+        [data-theme="light"] .bg-light { background: var(--fb-card-hover) !important; }
+        [data-theme="light"] textarea.font-monospace { color: var(--fb-text) !important; }
+        [data-theme="light"] #upload-drop-area:hover { background: rgba(217,138,0,.15); }
+
+        /* Theme toggle button in the nav */
+        #theme-toggle {
+            background: transparent; border: 1px solid var(--fb-border-md);
+            color: var(--fb-text-2); border-radius: 8px; padding: .3rem .55rem;
+            line-height: 1; font-size: .95rem; cursor: pointer;
+        }
+        #theme-toggle:hover { color: var(--fb-text); border-color: var(--fb-amber-border); }
+
+        /* Banners */
+        .fb-banner { padding: .55rem 1.5rem; font-size: .85rem; border-bottom: 1px solid var(--fb-border); }
+        .fb-banner code { font-size: .8rem; }
+        .fb-banner-warn { background: rgba(248,113,113,.12); color: var(--fb-red); }
+        .fb-banner-demo { background: var(--fb-amber-dim); color: var(--fb-amber); }
+
+        /* Action log colours */
+        #action-log .log-red { color: var(--fb-red); }
+        #action-log .log-green { color: var(--fb-green); }
+        #action-log .log-orange { color: var(--fb-amber); }
+        #action-log .log-blue { color: var(--fb-blue); }
+
+        .task-card { background: var(--fb-card); }
+
+        /* Preview plugins */
+        .pv-pre { max-height: 65vh; overflow: auto; background: var(--fb-bg-alt); color: var(--fb-text);
+                  border: 1px solid var(--fb-border); border-radius: 8px; padding: 1rem; margin: 0;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; line-height: 1.5; }
+        .pv-ln { display: inline-block; color: var(--fb-dimmer); user-select: none; padding-right: 1em; text-align: right; }
+        .pv-kw { color: #c792ea; } .pv-str { color: #c3e88d; } .pv-com { color: var(--fb-muted); font-style: italic; }
+        [data-theme="light"] .pv-kw { color: #8250df; } [data-theme="light"] .pv-str { color: #0a7d32; }
+        .pv-hex { white-space: pre; }
+        .pv-wrap { white-space: pre-wrap; word-break: break-word; }
+        .pv-note { margin: .6rem 0; padding: .5rem .75rem; border-radius: 6px; font-size: .8rem;
+                   border-left: 3px solid var(--fb-blue); background: rgba(99,179,237,.08); color: var(--fb-text-2); }
+        .pv-note-warn { border-left-color: var(--fb-amber); background: var(--fb-amber-dim); }
+        .pv-image { text-align: center; background: repeating-conic-gradient(rgba(128,128,128,.12) 0 25%, transparent 0 50%) 50% / 20px 20px;
+                    border-radius: 8px; padding: .5rem; }
+        .pv-image img { max-width: 100%; max-height: 70vh; }
+        .pv-pdf { display: flex; flex-direction: column; height: 78vh; }
+        .pv-pdf iframe { flex: 1; width: 100%; border: 1px solid var(--fb-border); border-radius: 6px; background: #fff; }
+        .pv-media video { width: 100%; max-height: 65vh; background: #000; border-radius: 8px; }
+        .pv-audio { padding: 1rem; background: var(--fb-bg-alt); border-radius: 10px; }
+        .pv-audio audio { width: 100%; }
+        .pv-audio-title { margin-bottom: .6rem; color: var(--fb-text); font-weight: 600; }
+        .pv-html iframe { width: 100%; height: 60vh; border: 1px solid var(--fb-border); border-radius: 6px; background: #fff; }
+        .pv-table-wrap { max-height: 65vh; overflow: auto; }
+        .pv-table { font-size: .8rem; white-space: nowrap; }
+        .pv-table thead th { position: sticky; top: 0; background: var(--fb-card-hover) !important; }
+        .pv-doc { max-height: 65vh; overflow: auto; white-space: pre-wrap; background: #fff; color: #222; padding: 2rem;
+                  border-radius: 6px; font-family: Georgia, 'Times New Roman', serif; line-height: 1.6; }
+        .pv-plugin-tag { margin-top: .75rem; text-align: right; font-size: .72rem; color: var(--fb-muted); }
+    </style>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+
+<body>
+    <div class="container-fluid">
+        <!-- NAV -->
+        <nav class="fb-nav">
+            <a class="brand" href="/">
+                <svg viewBox="0 0 64 64" width="28" height="28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="2" y="2" width="60" height="60" rx="14" fill="#101626" stroke="var(--fb-amber)" stroke-width="3"/>
+                    <path d="M16 22h32l-4 26a4 4 0 0 1-4 3H24a4 4 0 0 1-4-3z" fill="none" stroke="var(--fb-amber)" stroke-width="3.5" stroke-linejoin="round"/>
+                    <ellipse cx="32" cy="22" rx="16" ry="5" fill="#101626" stroke="var(--fb-amber)" stroke-width="3.5"/>
+                    <path d="M35 28l-7 10h6l-3 8 8-11h-6z" fill="var(--fb-amber)"/>
+                </svg>
+                S3FastBrowser<span class="dot">.</span>
+                <span class="ver">v{{ app_version }}</span>
+            </a>
+            <div class="nav-actions">
+                <button id="theme-toggle" type="button" title="Toggle light / dark theme" aria-label="Toggle theme"><i class="fas fa-moon"></i></button>
+                <div class="status-area me-2">
+                    <span id="connection-status" class="status-indicator status-disconnected"></span>
+                    <span id="status-text" style="font-size:.82rem;color:var(--fb-text-2)">Disconnected</span>
+                </div>
+                <button id="disconnect-btn" class="btn btn-outline-secondary btn-sm" onclick="disconnect()" style="display:none;">
+                    <i class="fas fa-unlink"></i> Disconnect
+                </button>
+                <button class="btn btn-outline-light btn-sm" onclick="openSettingsModal()" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <button id="tasks-btn" class="btn btn-outline-light btn-sm" onclick="toggleTasksPanel()" style="display:none;" title="Active tasks">
+                    <i class="fas fa-tasks"></i>
+                    <span id="tasks-badge" class="badge bg-warning ms-1">0</span>
+                </button>
+                <button class="btn btn-outline-light btn-sm" onclick="showAbout()" title="About">
+                    <i class="fas fa-info-circle"></i>
+                </button>
+                {% if auth_enabled %}
+                <a class="btn btn-outline-light btn-sm" href="/logout" title="Sign out ({{ auth_user }})">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+                {% endif %}
+            </div>
+        </nav>
+        {% if auth_warning %}
+        <div class="fb-banner fb-banner-warn" role="alert">
+            <i class="fas fa-exclamation-triangle"></i>
+            Authentication is not configured. Anyone who can reach this page can use the S3 credentials
+            entered here. Set <code>S3FB_AUTH_PASSWORD</code> or keep the app bound to localhost.
+        </div>
+        {% endif %}
+        {% if demo_mode %}
+        <div class="fb-banner fb-banner-demo">
+            <i class="fas fa-flask"></i> Demo mode: connected to a local MinIO with generated sample data.
+        </div>
+        {% endif %}
+
+        <!-- Floating Tasks Panel -->
+        <div id="tasks-panel"
+            style="display:none; position:fixed; bottom:20px; right:20px; width:360px; z-index:9999; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div class="card border-0">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                    <span><i class="fas fa-tasks me-2"></i><strong>Active Tasks</strong></span>
+                    <button class="btn btn-sm btn-outline-light py-0" onclick="toggleTasksPanel()"><i
+                            class="fas fa-minus"></i></button>
+                </div>
+                <div id="tasks-list" class="card-body p-2"
+                    style="max-height:320px; overflow-y:auto;">
+                    <div class="text-muted text-center small py-2">No active tasks</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="container mt-4">
+            <!-- Connection Form -->
+            <div id="connection-section" class="connection-form">
+                <h2 class="text-center mb-4">
+                    <i class="fas fa-plug"></i> Connect to S3
+                </h2>
+                {% if demo_mode %}
+                <div class="d-grid mb-4">
+                    <button type="button" class="btn btn-primary btn-lg" id="demo-connect-btn" onclick="demoConnect()">
+                        <i class="fas fa-flask"></i> Open the demo storage
+                    </button>
+                    <div class="form-text text-center mt-2">Or connect manually below.</div>
+                </div>
+                {% endif %}
+
+                <form id="s3-connection-form">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="access_key" class="form-label">Access Key</label>
+                            <input type="text" class="form-control" id="access_key" name="access_key" required autocomplete="off" spellcheck="false">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="secret_key" class="form-label">Secret Key</label>
+                            <input type="password" class="form-control" id="secret_key" name="secret_key" required autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="endpoint_url" class="form-label">Endpoint URL</label>
+                            <input type="url" class="form-control" id="endpoint_url" name="endpoint_url"
+                                value="{{ default_endpoint }}" placeholder="https://s3.amazonaws.com"
+                                {% if endpoint_allowlist %}list="allowed-endpoints"{% endif %}>
+                            {% if endpoint_allowlist %}
+                            <datalist id="allowed-endpoints">
+                                {% for e in endpoint_allowlist %}{% if '*' not in e and '?' not in e %}<option value="{{ e }}">{% endif %}{% endfor %}
+                            </datalist>
+                            <div class="form-text">Only the endpoints allowed by the administrator can be used.</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="region" class="form-label">Region</label>
+                            <input type="text" class="form-control" id="region" name="region" value="{{ default_region }}"
+                                placeholder="us-east-1">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="addressing_style" class="form-label">Addressing Style</label>
+                            <select class="form-control" id="addressing_style" name="addressing_style">
+                                <option value="path">Path style (MinIO, most on-premises S3)</option>
+                                <option value="auto">Virtual-hosted style (AWS S3)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="bucket" class="form-label">Bucket <span class="text-muted">(optional)</span></label>
+                            <input type="text" class="form-control" id="bucket" name="bucket" placeholder="for bucket-scoped keys" spellcheck="false">
+                            <div class="form-text">Open this bucket directly. Needed when the keys may not list all buckets.</div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-link"></i> Connect
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-4">
+                    <h5>Preset configurations:</h5>
+                    <div class="row">
+                        <div class="col-md-4 mb-2">
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="setConfig('aws')">
+                                AWS S3
+                            </button>
+                        </div>
+                        <div class="col-md-4 mb-2">
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="setConfig('minio')">
+                                MinIO
+                            </button>
+                        </div>
+                        <div class="col-md-4 mb-2">
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="setConfig('other')">
+                                Other S3-compatible
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Connections -->
+            <div id="recent-connections-section" class="mt-4" style="display: none;">
+                <h5><i class="fas fa-history"></i> Recent Connections</h5>
+                <div class="list-group" id="recent-connections-list">
+                    <!-- Recent connections will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Browser Section (hidden initially) -->
+        <div id="browser-section" style="display: none;">
+            <div class="row">
+                <div class="col-md-3">
+                    <!-- Bucket List -->
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-database"></i> Buckets</h5>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshBuckets()">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="bucket-list" class="list-group">
+                                <!-- Buckets will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-9">
+                    <!-- Object Browser -->
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <nav aria-label="breadcrumb">
+                                <ol id="breadcrumb" class="breadcrumb mb-0">
+                                    <li class="breadcrumb-item" id="breadcrumb-bucket"><a href="#"
+                                            onclick="navigateTo('')">Bucket</a></li>
+                                </ol>
+                            </nav>
+                            <div class="d-flex align-items-center">
+                                <button id="upload-btn" class="btn btn-success btn-sm" onclick="showUploadModal()">
+                                    <i class="fas fa-upload"></i> Upload File
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Search Bar -->
+                            <div id="search-container" style="display: none;">
+                                <div class="mb-3">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <div class="input-group">
+                                                <span class="input-group-text">
+                                                    <i class="fas fa-search"></i>
+                                                </span>
+                                                <input type="text" class="form-control" id="search-input"
+                                                    placeholder="Search files in this bucket..."
+                                                    onkeypress="if(event.key==='Enter') searchFiles()"
+                                                    oninput="debounceSearch()">
+                                                <button class="btn btn-outline-secondary" type="button"
+                                                    onclick="clearSearch()" title="Clear search">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <select class="form-select" id="extension-filter" onchange="searchFiles()">
+                                                <option value="">All file types</option>
+                                                <option value=".txt">Text files (.txt)</option>
+                                                <option value=".pdf">PDF files (.pdf)</option>
+                                                <option value=".jpg,.jpeg,.png,.gif">Images (.jpg, .png, .gif)</option>
+                                                <option value=".csv">CSV files (.csv)</option>
+                                                <option value=".json">JSON files (.json)</option>
+                                                <option value=".xml">XML files (.xml)</option>
+                                                <option value=".html,.htm">HTML files (.html, .htm)</option>
+                                                <option value=".sh,.bash,.zsh">Shell scripts (.sh, .bash, .zsh)</option>
+                                                <option value=".py">Python files (.py)</option>
+                                                <option value=".js">JavaScript files (.js)</option>
+                                                <option value=".zip,.rar,.tar,.gz">Archives (.zip, .rar, .tar)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <button class="btn btn-primary w-100" onclick="searchFiles()">
+                                                <i class="fas fa-search"></i> Search
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="search-status" class="mt-2" style="display: none;">
+                                        <small class="text-muted">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span id="search-results-count"></span>
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Loading spinner -->
+                            <div id="object-loading" class="text-center my-4" style="display:none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <div>Loading objects...</div>
+                            </div>
+                            <!-- Add Download Selected button above object list -->
+                            <div class="mb-2 d-flex align-items-center">
+                                <button id="download-selected-btn" class="btn btn-outline-primary btn-sm me-2"
+                                    onclick="downloadSelectedObjects()" disabled>
+                                    <i class="fas fa-download"></i> Download Selected
+                                </button>
+                                <button id="download-selected-fs-btn" class="btn btn-outline-success btn-sm me-2"
+                                    onclick="downloadSelectedToFolder()" disabled
+                                    title="Save files directly to a local folder (Chrome/Edge only)"
+                                    style="display:none;">
+                                    <i class="fas fa-folder-open"></i> Save to folder
+                                </button>
+                                <span id="selected-count" class="text-muted"></span>
+                            </div>
+                            <div id="object-list">
+                                <!-- Objects will be loaded here -->
+                            </div>
+                            <!-- Pagination -->
+                            <div id="object-pagination" class="justify-content-center align-items-center mt-3"
+                                style="display:none;">
+                                <div class="d-flex align-items-center me-3">
+                                    <label for="items-per-page" class="form-label mb-0 me-2">Items per page:</label>
+                                    <select id="items-per-page" class="form-select form-select-sm" style="width: auto;"
+                                        onchange="changeItemsPerPage()">
+                                        <option value="10">10</option>
+                                        <option value="20" selected>20</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                                <button id="page-prev" class="btn btn-outline-secondary btn-sm me-2"
+                                    onclick="changePage(-1)"><i class="fas fa-chevron-left"></i> Previous</button>
+                                <span id="page-info" class="mx-2"></span>
+                                <button id="page-next" class="btn btn-outline-secondary btn-sm ms-2"
+                                    onclick="changePage(1)">Next <i class="fas fa-chevron-right"></i></button>
+                                <button id="page-last" class="btn btn-outline-primary btn-sm ms-2"
+                                    onclick="goToLastPage()"><i class="fas fa-fast-forward"></i> Last</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action log -->
+        <div id="action-log" class="mt-4"></div>
+    </div>
+
+    <footer class="fb-footer">
+        S3FastBrowser v{{ app_version }} &nbsp;·&nbsp;
+        <a href="https://github.com/mmiretta/s3fastbrowser" target="_blank" rel="noopener">GitHub</a> &nbsp;·&nbsp;
+        <a href="#" onclick="showAbout(); return false;">About</a>
+    </footer>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-cog me-2"></i>Settings</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="settings-form">
+                        <div class="mb-4">
+                            <h6 class="border-bottom pb-2 text-muted text-uppercase"
+                                style="font-size:0.75rem;letter-spacing:.05em;">Browser Options</h6>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="s_show_delete_markers">
+                                <label class="form-check-label" for="s_show_delete_markers">Show Delete Markers</label>
+                                <div class="form-text">If enabled, deleted objects (delete markers) will be visible in
+                                    the browser.</div>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="s_show_bucket_settings">
+                                <label class="form-check-label" for="s_show_bucket_settings">Show Bucket Settings
+                                    Icon</label>
+                                <div class="form-text">Show the settings (gear) icon next to buckets in the browser.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <h6 class="border-bottom pb-2 text-muted text-uppercase"
+                                style="font-size:0.75rem;letter-spacing:.05em;">Transfer Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="s_multipart_threshold" class="form-label">Multipart Upload Threshold
+                                        (MB)</label>
+                                    <input type="number" class="form-control" id="s_multipart_threshold" min="5"
+                                        max="5000">
+                                    <div class="form-text">Files larger than this will be uploaded in parts.</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="s_chunk_size" class="form-label">Chunk Size (MB)</label>
+                                    <input type="number" class="form-control" id="s_chunk_size" min="5" max="5000">
+                                    <div class="form-text">Size of each part during multipart upload.</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="s_concurrent_uploads" class="form-label">
+                                    Concurrent Uploads: <strong id="s_concurrent_uploads_value">5</strong>
+                                </label>
+                                <input type="range" class="form-range" id="s_concurrent_uploads" min="1" max="10"
+                                    step="1"
+                                    oninput="document.getElementById('s_concurrent_uploads_value').textContent = this.value">
+                                <div class="form-text">Number of files to upload simultaneously (1–10).</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSettingsModal()">
+                        <i class="fas fa-save me-1"></i>Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal fade" id="objectModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Object Information</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="object-modal-body">
+                    <!-- Object details will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal fade" id="uploadModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Upload File to <span id="upload-bucket-name"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="upload-form">
+                        <div class="mb-3">
+                            <label class="form-label">Select Content</label>
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-outline-primary flex-grow-1"
+                                    onclick="document.getElementById('upload-file').click()">
+                                    <i class="fas fa-file"></i> Select Files
+                                </button>
+                                <button type="button" class="btn btn-outline-primary flex-grow-1"
+                                    onclick="document.getElementById('upload-folder').click()">
+                                    <i class="fas fa-folder"></i> Select Folder
+                                </button>
+                            </div>
+                            <div id="upload-drop-area" class="border border-primary rounded p-3 text-center mb-3"
+                                style="cursor:pointer;">
+                                <i class="fas fa-cloud-upload-alt fa-2x text-primary"></i><br>
+                                <span>Drag & drop files or folders here</span>
+                            </div>
+                            <input type="file" id="upload-file" multiple style="display:none;">
+                            <input type="file" id="upload-folder" webkitdirectory directory style="display:none;">
+                            <div id="selected-files-count" class="text-muted small text-center"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="upload-key" class="form-label">S3 Key (optional)</label>
+                            <input type="text" class="form-control" id="upload-key"
+                                placeholder="Leave empty to use filename">
+                            <div class="form-text">Specify the S3 key/path for the file. If empty, the filename will be
+                                used.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="upload-prefix" class="form-label">Upload to Prefix</label>
+                            <input type="text" class="form-control" id="upload-prefix"
+                                placeholder="e.g., folder/subfolder/">
+                            <div class="form-text">Specify the folder path where files will be uploaded. Leave empty for
+                                root.</div>
+                        </div>
+                    </form>
+                    <div id="upload-progress-list" class="mt-3"></div>
+                    <div id="upload-status" class="mt-3"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="uploadFile()">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal fade" id="aboutModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <svg viewBox="0 0 64 64" width="20" height="20" style="margin-right:8px;vertical-align:middle" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="2" y="2" width="60" height="60" rx="14" fill="#101626" stroke="var(--fb-amber)" stroke-width="3"/>
+                    <path d="M16 22h32l-4 26a4 4 0 0 1-4 3H24a4 4 0 0 1-4-3z" fill="none" stroke="var(--fb-amber)" stroke-width="3.5" stroke-linejoin="round"/>
+                    <ellipse cx="32" cy="22" rx="16" ry="5" fill="#101626" stroke="var(--fb-amber)" stroke-width="3.5"/>
+                    <path d="M35 28l-7 10h6l-3 8 8-11h-6z" fill="var(--fb-amber)"/>
+                </svg>
+                        S3FastBrowser
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="padding:1.5rem">
+                    <div style="text-align:center;margin-bottom:1.5rem">
+                        <div style="font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;color:var(--fb-text)">S3FastBrowser</div>
+                        <div style="color:var(--fb-muted);font-size:.85rem;margin-top:.3rem">Fast S3-compatible storage browser</div>
+                        <div style="display:inline-flex;align-items:center;gap:6px;background:var(--fb-amber-dim);border:1px solid var(--fb-amber-border);border-radius:100px;padding:.25rem .8rem;margin-top:.8rem;font-size:.7rem;font-weight:600;color:var(--fb-amber);letter-spacing:.06em;text-transform:uppercase">
+                            <span style="width:5px;height:5px;border-radius:50%;background:var(--fb-amber);display:inline-block"></span>
+                            Version {{ app_version }}
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+                        <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem">
+                            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--fb-amber);margin-bottom:.4rem;font-weight:600">Stack</div>
+                            <div style="font-size:.82rem;color:var(--fb-text-2)">Flask · boto3 · Gunicorn</div>
+                        </div>
+                        <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem">
+                            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--fb-amber);margin-bottom:.4rem;font-weight:600">License</div>
+                            <div style="font-size:.82rem;color:var(--fb-text-2)">MIT</div>
+                        </div>
+                    </div>
+                    <div style="background:var(--fb-bg-alt);border:1px solid var(--fb-border);border-radius:10px;padding:1rem;display:flex;align-items:center;gap:12px">
+                        <div style="width:36px;height:36px;border-radius:50%;background:var(--fb-amber-dim);border:1px solid var(--fb-amber-border);display:flex;align-items:center;justify-content:center;color:var(--fb-amber);flex-shrink:0">
+                            <i class="fas fa-user" style="font-size:.85rem"></i>
+                        </div>
+                        <div>
+                            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.9rem;color:var(--fb-text)">Mariano Miretta</div>
+                            <div style="font-size:.75rem;color:var(--fb-muted)">Author · open source under the MIT license</div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                    <a href="https://github.com/mmiretta/s3fastbrowser" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="fab fa-github"></i> Project page</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-eye"></i> <span id="preview-modal-title">Object Preview</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="preview-modal-body">
+                    <div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading preview...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentBucket = '';
+        let currentPrefix = '';
+        let currentContinuationToken = null;
+        let lastIsTruncated = false;
+        let lastNextToken = null;
+        let currentPerPage = 20;
+        let currentPage = 1;
+        let loadObjectsRequestId = 0; // for race condition prevention
+        let showDeleteMarkers = false;
+        let lastLoadedDeleteMarkers = [];
+        let lastLoadedObjects = [];
+        let lastLoadedCommonPrefixes = [];
+        let isSearchMode = false;
+        let searchResults = [];
+        let searchTimeout = null;
+        let selectedObjects = new Set();
+
+        const APP_VERSION = {{ app_version|tojson }};
+
+        // Every API call goes through fetch(); if the login session expired the
+        // server answers 401 and we send the user back to the login page.
+        (function () {
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = async function (...args) {
+                const response = await originalFetch(...args);
+                if (response.status === 401) {
+                    window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
+                return response;
+            };
+        })();
+
+        // HTML-escape a value before inserting it with innerHTML.
+        function esc(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // Preset connection settings
+        const configs = {
+            aws: {
+                endpoint_url: 'https://s3.amazonaws.com',
+                region: 'us-east-1',
+                addressing_style: 'auto'
+            },
+            minio: {
+                endpoint_url: 'http://localhost:9000',
+                region: 'us-east-1',
+                addressing_style: 'path'
+            },
+            other: {
+                endpoint_url: 'https://s3.example.com',
+                region: 'us-east-1',
+                addressing_style: 'path'
+            }
+        };
+
+        function setConfig(type) {
+            const config = configs[type];
+            document.getElementById('endpoint_url').value = config.endpoint_url;
+            document.getElementById('region').value = config.region;
+            document.getElementById('addressing_style').value = config.addressing_style;
+        }
+
+        function showAbout() {
+            new bootstrap.Modal(document.getElementById('aboutModal')).show();
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (e) {
+            // Ctrl+Shift+A or Cmd+Shift+A to open about modal
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
+                e.preventDefault();
+                showAbout();
+            }
+        });
+
+        // Initialize tooltips when page loads
+        // Theme toggle (light / dark), persisted in localStorage; default dark.
+        function sfbCurrentTheme() {
+            return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+        }
+        function sfbApplyTheme(theme) {
+            document.documentElement.setAttribute("data-theme", theme);
+            try { localStorage.setItem("s3fb-theme", theme); } catch (e) {}
+            var btn = document.getElementById("theme-toggle");
+            if (btn) {
+                btn.innerHTML = theme === "light" ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+                btn.title = theme === "light" ? "Switch to dark theme" : "Switch to light theme";
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            sfbApplyTheme(sfbCurrentTheme());
+            var tt = document.getElementById("theme-toggle");
+            if (tt) tt.addEventListener("click", function () {
+                sfbApplyTheme(sfbCurrentTheme() === "light" ? "dark" : "light");
+            });
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            const dropArea = document.getElementById('upload-drop-area');
+            if (dropArea) {
+                dropArea.addEventListener('click', () => document.getElementById('upload-file').click());
+                dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('bg-light'); });
+                dropArea.addEventListener('dragleave', e => { e.preventDefault(); dropArea.classList.remove('bg-light'); });
+                dropArea.addEventListener('drop', e => {
+                    e.preventDefault();
+                    dropArea.classList.remove('bg-light');
+                    document.getElementById('upload-file').files = e.dataTransfer.files;
+                    updateUploadFileList();
+                });
+            }
+            document.getElementById('upload-file').addEventListener('change', updateUploadFileList);
+
+            // Download buttons rendered by preview plugins
+            document.getElementById('preview-modal-body').addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-pv-download]');
+                if (btn) { e.preventDefault(); downloadObject(btn.getAttribute('data-pv-download')); }
+            });
+
+            // Load recent connections
+            loadRecentConnections();
+
+            // Load settings
+            loadSettings();
+
+            // Check connection status and restore state if connected
+            checkConnectionStatus();
+        });
+
+        async function checkConnectionStatus() {
+            try {
+                const response = await fetch('/api/connection-status');
+                const status = await response.json();
+
+                if (status.connected) {
+                    updateConnectionStatus(true, status.endpoint);
+                    // Deep link: /?bucket=<name> opens that bucket once the
+                    // session is confirmed connected (or the bucket given when
+                    // connecting). The param is then removed from the URL so
+                    // reloads don't re-trigger the jump.
+                    const bucketParam = new URLSearchParams(window.location.search).get('bucket') || status.bucket;
+                    if (bucketParam) {
+                        history.replaceState({}, '', '/');
+                        selectBucket(bucketParam);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking connection status:', error);
+            }
+        }
+
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                window.appSettings = settings; // Store globally
+                if (settings.show_delete_markers) {
+                    showDeleteMarkers = true;
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        async function openSettingsModal() {
+            try {
+                const response = await fetch('/api/settings');
+                const s = await response.json();
+                document.getElementById('s_show_delete_markers').checked = !!s.show_delete_markers;
+                document.getElementById('s_show_bucket_settings').checked = s.show_bucket_settings !== false;
+                document.getElementById('s_multipart_threshold').value = s.multipart_threshold || 8;
+                document.getElementById('s_chunk_size').value = s.chunk_size || 8;
+                const concurrent = s.concurrent_uploads || 5;
+                document.getElementById('s_concurrent_uploads').value = concurrent;
+                document.getElementById('s_concurrent_uploads_value').textContent = concurrent;
+            } catch (e) {
+                console.error('Error loading settings:', e);
+            }
+            new bootstrap.Modal(document.getElementById('settingsModal')).show();
+        }
+
+        async function saveSettingsModal() {
+            const settings = {
+                show_delete_markers: document.getElementById('s_show_delete_markers').checked,
+                show_bucket_settings: document.getElementById('s_show_bucket_settings').checked,
+                multipart_threshold: parseInt(document.getElementById('s_multipart_threshold').value),
+                chunk_size: parseInt(document.getElementById('s_chunk_size').value),
+                concurrent_uploads: parseInt(document.getElementById('s_concurrent_uploads').value)
+            };
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                const data = await response.json();
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                window.appSettings = settings;
+                showDeleteMarkers = settings.show_delete_markers;
+                bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+                logAction('Settings saved successfully');
+            } catch (e) {
+                console.error('Error saving settings:', e);
+                alert('An error occurred while saving settings.');
+            }
+        }
+
+        async function loadRecentConnections() {
+            try {
+                const response = await fetch('/recent-connections');
+                const result = await response.json();
+                const list = document.getElementById('recent-connections-list');
+                const section = document.getElementById('recent-connections-section');
+
+                if (result.connections && result.connections.length > 0) {
+                    list.innerHTML = '';
+                    result.connections.forEach((conn, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                        const lastUsed = conn.last_used ? new Date(conn.last_used).toLocaleString() : '';
+                        item.innerHTML = `
+                            <div style="cursor: pointer; flex-grow: 1;" onclick="connectRecent(${index})" title="Connect again">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">${esc(conn.endpoint_url)}</h6>
+                                    <small class="text-muted">${esc(lastUsed)}</small>
+                                </div>
+                                <small class="text-muted">Key: ${esc(conn.access_key_masked)} | Region: ${esc(conn.region)}${conn.bucket ? ' | Bucket: ' + esc(conn.bucket) : ''}</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger ms-2" onclick="deleteConnection(event, ${index})" title="Forget">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        `;
+                        list.appendChild(item);
+                    });
+                    const isConnected = document.getElementById('connection-status').classList.contains('status-connected');
+                    if (!isConnected) section.style.display = 'block';
+                } else {
+                    section.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading recent connections:', error);
+            }
+        }
+
+        // Reconnect with a remembered connection. The secret key stays on the
+        // server; the browser only sends the index.
+        async function connectRecent(index) {
+            try {
+                const response = await fetch(`/recent-connections/${index}/connect`, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) {
+                    afterConnect(result);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Connection error: ' + error.message);
+            }
+        }
+
+        async function demoConnect() {
+            const btn = document.getElementById('demo-connect-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const response = await fetch('/api/demo-connect', { method: 'POST' });
+                const result = await response.json();
+                if (response.ok) afterConnect(result);
+                else alert('Error: ' + result.error);
+            } catch (error) {
+                alert('Connection error: ' + error.message);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        function afterConnect(result) {
+            checkConnectionStatus();
+        }
+
+        async function deleteConnection(event, index) {
+            event.stopPropagation();
+            if (!confirm('Remove this connection from the history?')) return;
+            try {
+                const response = await fetch(`/recent-connections/${index}`, { method: 'DELETE' });
+                if (response.ok) loadRecentConnections();
+                else alert('Error removing connection');
+            } catch (error) {
+                console.error('Error removing connection:', error);
+            }
+        }
+
+        // Form submission
+        document.getElementById('s3-connection-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const formData = {
+                access_key: document.getElementById('access_key').value,
+                secret_key: document.getElementById('secret_key').value,
+                endpoint_url: document.getElementById('endpoint_url').value,
+                region: document.getElementById('region').value,
+                addressing_style: document.getElementById('addressing_style').value,
+                bucket: document.getElementById('bucket').value.trim()
+            };
+
+            try {
+                const response = await fetch('/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('secret_key').value = '';
+                    afterConnect(result);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Connection error: ' + error.message);
+            }
+        });
+
+        function updateConnectionStatus(connected, endpoint = '') {
+            const statusIndicator = document.getElementById('connection-status');
+            const statusText = document.getElementById('status-text');
+            const disconnectBtn = document.getElementById('disconnect-btn');
+            const connectionSection = document.getElementById('connection-section');
+            const browserSection = document.getElementById('browser-section');
+            const recentConnectionsSection = document.getElementById('recent-connections-section');
+
+            if (connected) {
+                statusIndicator.classList.remove('status-disconnected');
+                statusIndicator.classList.add('status-connected');
+                statusText.textContent = `Connected to ${endpoint}`;
+                loadRecentConnections();
+                disconnectBtn.style.display = 'inline-block';
+                connectionSection.style.display = 'none';
+                if (recentConnectionsSection) recentConnectionsSection.style.display = 'none';
+                browserSection.style.display = 'block';
+                loadBuckets();
+            } else {
+                statusIndicator.classList.remove('status-connected');
+                statusIndicator.classList.add('status-disconnected');
+                statusText.textContent = 'Disconnected';
+                disconnectBtn.style.display = 'none';
+                connectionSection.style.display = 'block';
+                if (recentConnectionsSection) recentConnectionsSection.style.display = 'block';
+                browserSection.style.display = 'none';
+            }
+        }
+
+        async function disconnect() {
+            try {
+                const response = await fetch('/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    // Reset state
+                    currentBucket = '';
+                    currentPrefix = '';
+                    currentContinuationToken = null;
+                    lastIsTruncated = false;
+                    lastNextToken = null;
+
+                    // Update UI
+                    updateConnectionStatus(false);
+                    document.getElementById('connection-section').style.display = 'block';
+                    document.getElementById('browser-section').style.display = 'none';
+                    document.getElementById('bucket-list').innerHTML = '';
+                    document.getElementById('object-list').innerHTML = '';
+                    document.getElementById('action-log').innerHTML = '';
+                    document.getElementById('upload-btn').style.display = 'none';
+
+                    // Reset the form (keeping the default endpoint)
+                    document.getElementById('s3-connection-form').reset();
+                    loadRecentConnections();
+
+                    logAction('Session disconnected successfully');
+                } else {
+                    const result = await response.json();
+                    alert('Error disconnecting: ' + result.error);
+                }
+            } catch (error) {
+                alert('Disconnection error: ' + error.message);
+            }
+        }
+
+        async function loadBuckets() {
+            try {
+                const response = await fetch('/buckets');
+                const result = await response.json();
+
+                if (response.ok) {
+                    displayBuckets(result.buckets);
+                } else {
+                    // Non-blocking: bucket-scoped credentials can't call
+                    // ListAllMyBuckets. Browsing a specific bucket still works,
+                    // so show the message inside the panel instead of an alert.
+                    const bucketList = document.getElementById('bucket-list');
+                    if (bucketList) {
+                        bucketList.innerHTML = '<div class="list-group-item text-muted" style="font-size:0.85em;">' +
+                            'Bucket list unavailable (the credentials may be bucket-scoped). ' +
+                            'Disconnect and enter the bucket name in the connection form.</div>';
+                    }
+                    console.warn('loadBuckets:', result.error);
+                }
+            } catch (error) {
+                console.warn('loadBuckets:', error.message);
+            }
+        }
+
+        function displayBuckets(buckets) {
+            const bucketList = document.getElementById('bucket-list');
+            bucketList.innerHTML = '';
+
+            buckets.forEach(bucket => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+                let settingsIconHtml = '';
+                if (window.appSettings && window.appSettings.show_bucket_settings) {
+                    settingsIconHtml = `
+                        <a href="/bucket/${encodeURIComponent(bucket.name)}/settings" class="btn btn-sm btn-outline-secondary" title="Bucket Settings">
+                            <i class="fas fa-cog"></i>
+                        </a>
+                    `;
+                }
+
+                item.innerHTML = `
+                    <div onclick="selectBucket('${escapeJsString(bucket.name)}')" style="cursor: pointer; flex-grow: 1;" data-bucket="${esc(bucket.name)}">
+                        <i class="fas fa-box-archive me-2 text-primary"></i>
+                        <strong>${esc(bucket.name)}</strong>
+                        <small class="text-muted ms-2">${bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : ''}</small>
+                    </div>
+                    ${settingsIconHtml}
+                `;
+                bucketList.appendChild(item);
+            });
+        }
+
+        // Messages may contain a <span style='color:..'> wrapper and <b> tags
+        // for emphasis; they are reduced to plain text (plus a colour) so object
+        // keys inside a message can never inject markup.
+        function logAction(msg) {
+            const logDiv = document.getElementById('action-log');
+            const now = new Date().toLocaleTimeString();
+            const colorMatch = /^<span style=['"]color:\s*([a-z]+)['"]>/i.exec(msg);
+            const line = document.createElement('div');
+            line.textContent = `[${now}] ` + String(msg).replace(/<\/?(span|b)\b[^>]*>/gi, '');
+            if (colorMatch) line.className = 'log-' + colorMatch[1].toLowerCase();
+            logDiv.appendChild(line);
+            while (logDiv.childNodes.length > 200) logDiv.removeChild(logDiv.firstChild);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function showLoading(show) {
+            document.getElementById('object-loading').style.display = show ? '' : 'none';
+        }
+
+        async function loadObjects(bypassCache = false) {
+            if (!currentBucket) return;
+
+            // Race condition prevention: stamp this request
+            const myRequestId = ++loadObjectsRequestId;
+
+            const list = document.getElementById('object-list');
+            list.innerHTML = '<div class="text-center mt-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading objects...</p></div>';
+
+            // Show search bar
+            document.getElementById('search-container').style.display = 'block';
+
+            try {
+                const params = new URLSearchParams();
+                params.append('per_page', currentPerPage);
+                if (currentContinuationToken) {
+                    params.append('continuation_token', currentContinuationToken);
+                }
+                if (bypassCache) {
+                    params.append('use_cache', 'false');
+                }
+
+                const url = browseUrl(currentBucket, currentPrefix, params);
+
+                logAction(`Loading objects from bucket: ${currentBucket}${currentPrefix ? `, prefix: ${currentPrefix}` : ''}`);
+
+                const response = await fetch(url);
+
+                // Discard stale responses from previous requests
+                if (myRequestId !== loadObjectsRequestId) return;
+                const data = await response.json();
+
+                if (data.error) {
+                    list.innerHTML = `<div class="alert alert-danger">Error: ${esc(data.error)}</div>`;
+                    logAction(`<span style='color:red'>Error loading objects: ${data.error}</span>`);
+                    return;
+                }
+
+                list.innerHTML = '';
+                lastLoadedObjects = data.objects || [];
+                lastLoadedCommonPrefixes = data.common_prefixes || [];
+
+                // Headers
+                const header = document.createElement('div');
+                header.className = 'list-group-item list-group-item-action active d-flex justify-content-between align-items-center';
+                header.innerHTML = `
+                    <div class="d-flex align-items-center" style="width: 50%;">
+                        <div class="form-check me-3">
+                            <input class="form-check-input" type="checkbox" id="select-all-objects" onchange="toggleSelectAll()">
+                        </div>
+                        <strong>Name</strong>
+                    </div>
+                    <div style="width: 15%;"><strong>Size</strong></div>
+                    <div style="width: 20%;"><strong>Last Modified</strong></div>
+                    <div style="width: 15%;"><strong>Actions</strong></div>
+                `;
+                list.appendChild(header);
+
+                // Parent folder
+                if (currentPrefix) {
+                    const parent = document.createElement('div');
+                    parent.className = 'list-group-item list-group-item-action';
+                    parent.style.cursor = 'pointer';
+                    parent.onclick = () => navigateUp();
+                    parent.innerHTML = '<i class="fas fa-level-up-alt text-primary me-2"></i> ..';
+                    list.appendChild(parent);
+                }
+
+                // Folders
+                data.common_prefixes.forEach(prefix => {
+                    const name = prefix.replace(currentPrefix, '');
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+
+                    item.innerHTML = `
+                        <div class="d-flex align-items-center" style="width: 50%;">
+                            <div class="form-check me-3">
+                                <input class="form-check-input object-checkbox" type="checkbox" value="${esc(prefix)}" data-type="folder" onchange="toggleObjectSelection(this, '${escapeJsString(prefix)}')" ${selectedObjects.has(prefix) ? 'checked' : ''}>
+                            </div>
+                            <span style="cursor:pointer" onclick="navigateTo('${escapeJsString(prefix)}')">
+                                <i class="fas fa-folder text-warning me-2"></i> ${esc(name)}
+                            </span>
+                        </div>
+                        <div style="width: 15%;">-</div>
+                        <div style="width: 20%;">-</div>
+                        <div style="width: 15%;">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="event.stopPropagation(); downloadFolder('${escapeJsString(prefix)}')" title="Download folder as ZIP">
+                                    <i class="fas fa-file-archive"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="event.stopPropagation(); deletePrefix('${escapeJsString(prefix)}')" title="Delete folder and all contents">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+
+                // Objects
+                data.objects.forEach(obj => {
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                    item.setAttribute('data-object-key', obj.key);
+
+                    // Format last modified date
+                    const lastModified = obj.last_modified ? new Date(obj.last_modified).toLocaleString() : '-';
+
+                    // Version and metadata indicators
+                    const versionIndicator = (obj.versions && obj.versions.length > 1) ?
+                        `<span class="badge bg-info ms-1" title="${obj.versions.length} versions"><i class="fas fa-history"></i> ${obj.versions.length}</span>` : '';
+                    const metadataIndicator = (obj.metadata && Object.keys(obj.metadata).length > 0) ?
+                        `<span class="badge bg-warning ms-1" title="Has metadata"><i class="fas fa-tags"></i></span>` : '';
+
+                    item.innerHTML = `
+                        <div class="d-flex align-items-center" style="width: 50%;">
+                            <div class="form-check me-3">
+                                <input class="form-check-input object-checkbox" type="checkbox" data-key="${esc(obj.key)}" onchange="toggleObjectSelection(this, '${escapeJsString(obj.key)}')" ${selectedObjects.has(obj.key) ? 'checked' : ''}>
+                            </div>
+                            <span style="cursor:pointer" onclick="showObjectDetails('${escapeJsString(obj.key)}')">
+                                <i class="${esc(obj.icon_class || 'fas fa-file')} me-2"></i> ${esc(obj.name)}
+                                ${versionIndicator}
+                                ${metadataIndicator}
+                            </span>
+                        </div>
+                        <div style="width: 15%;">${obj.size_formatted || '-'}</div>
+                        <div style="width: 20%;"><small class="text-muted">${lastModified}</small></div>
+                        <div style="width: 15%;">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary" onclick="previewObject('${escapeJsString(obj.key)}')" title="Preview">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-primary" onclick="downloadObject('${escapeJsString(obj.key)}')" title="Download">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="deleteObject('${escapeJsString(obj.key)}')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+
+                // Delete markers if enabled
+                if (showDeleteMarkers) {
+                    loadDeleteMarkers().then(() => {
+                        if (lastLoadedDeleteMarkers && lastLoadedDeleteMarkers.length > 0) {
+                            lastLoadedDeleteMarkers.forEach(marker => {
+                                const item = createObjectItem(marker);
+                                list.appendChild(item);
+                            });
+                        }
+                    });
+                }
+
+                updatePagination(data.next_token, data.is_truncated);
+                logAction(`Loaded ${data.objects.length} objects and ${data.common_prefixes.length} folders`);
+
+            } catch (error) {
+                list.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                logAction(`<span style='color:red'>Error loading objects: ${error.message}</span>`);
+            }
+        }
+
+        async function loadDeleteMarkers() {
+            try {
+                const dmUrl = `/delete-markers/${encodeURIComponent(currentBucket)}?prefix=${encodeURIComponent(currentPrefix)}`;
+                console.log('Fetching delete markers from:', dmUrl);
+                const response = await fetch(dmUrl);
+                const result = await response.json();
+
+                console.log('Delete markers response:', result);
+
+                if (response.ok) {
+                    // Transform delete markers to include necessary properties
+                    lastLoadedDeleteMarkers = (result.delete_markers || []).map(dm => {
+                        const transformed = {
+                            ...dm,
+                            is_delete_marker: true,
+                            name: dm.key.split('/').pop() || dm.key,
+                            size_formatted: '-',
+                            icon_class: 'fas fa-trash-alt text-danger',
+                            last_modified: dm.last_modified
+                        };
+                        console.log('Transformed delete marker:', transformed);
+                        return transformed;
+                    });
+                    logAction(`Loaded ${lastLoadedDeleteMarkers.length} delete markers`);
+                } else {
+                    logAction(`<span style='color:red'>Error loading delete markers: ${result.error}</span>`);
+                    lastLoadedDeleteMarkers = [];
+                }
+            } catch (error) {
+                console.error('Error in loadDeleteMarkers:', error);
+                logAction(`<span style='color:red'>Error loading delete markers: ${error.message}</span>`);
+                lastLoadedDeleteMarkers = [];
+            }
+        }
+
+        function displayObjectsWithDeleteMarkers(objects, commonPrefixes) {
+            const objectList = document.getElementById('object-list');
+            objectList.innerHTML = '';
+
+            console.log('Displaying objects with delete markers:', {
+                objects: objects.length,
+                commonPrefixes: commonPrefixes.length,
+                deleteMarkers: lastLoadedDeleteMarkers.length
+            });
+
+            // Add folders first
+            commonPrefixes.forEach(prefix => {
+                const folderName = prefix.split('/').filter(p => p).pop() || prefix;
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div class="flex-grow-1">
+                        <i class="fas fa-folder text-warning me-2"></i>
+                        <a href="#" onclick="navigateTo('${escapeJsString(prefix)}')">${esc(folderName)}</a>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary me-2">Folder</span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deletePrefix('${escapeJsString(prefix)}')" title="Delete folder and all contents">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                objectList.appendChild(item);
+            });
+
+            // Add objects
+            objects.forEach(obj => {
+                const item = createObjectItem(obj);
+                objectList.appendChild(item);
+            });
+
+            // Add delete markers
+            if (lastLoadedDeleteMarkers && lastLoadedDeleteMarkers.length > 0) {
+                console.log('Adding delete markers:', lastLoadedDeleteMarkers);
+                lastLoadedDeleteMarkers.forEach(marker => {
+                    const item = createObjectItem(marker);
+                    objectList.appendChild(item);
+                });
+            } else {
+                console.log('No delete markers to display');
+            }
+        }
+
+        function displayObjects(objects, commonPrefixes) {
+            const objectList = document.getElementById('object-list');
+            objectList.innerHTML = '';
+
+            // Add folders first
+            commonPrefixes.forEach(prefix => {
+                const folderName = prefix.split('/').filter(p => p).pop() || prefix;
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div class="flex-grow-1">
+                        <i class="fas fa-folder text-warning me-2"></i>
+                        <a href="#" onclick="navigateTo('${escapeJsString(prefix)}')">${esc(folderName)}</a>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary me-2">Folder</span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deletePrefix('${escapeJsString(prefix)}')" title="Delete folder and all contents">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                objectList.appendChild(item);
+            });
+
+            // Add objects
+            objects.forEach(obj => {
+                const item = createObjectItem(obj);
+                objectList.appendChild(item);
+            });
+        }
+
+        // Escape a string for a single- or double-quoted JS string literal that
+        // sits inside an HTML attribute (onclick="fn('...')"): first JS-escape,
+        // then HTML-escape (the browser decodes entities before running the JS).
+        function escapeJsString(str) {
+            if (str === undefined || str === null) return '';
+            const js = String(str)
+                .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n').replace(/\r/g, '\\r')
+                .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+            return esc(js);
+        }
+
+        function encodeS3Key(key) {
+            if (!key) return '';
+            return key.split('/').map(encodeURIComponent).join('/');
+        }
+
+        // Build a /browse URL carrying the prefix as a query param. This is the
+        // only way to pass a prefix that itself starts with '/' (e.g. '/data/'):
+        // putting it in the path produces '//data/' which the browser/Flask
+        // collapse, losing the leading slash. extraParams is an optional
+        // URLSearchParams with pagination etc.
+        function browseUrl(bucket, prefix, extraParams) {
+            const params = extraParams || new URLSearchParams();
+            params.set('prefix', prefix || '');
+            return `/browse/${encodeURIComponent(bucket)}?${params.toString()}`;
+        }
+
+        // Build a prefix-based URL (download-folder/list-recursive/...) carrying
+        // the prefix as a '?prefix=' query param so leading-slash prefixes
+        // survive. Same placeholder-segment trick as keyUrl.
+        function prefixUrl(base, bucket, prefix, extraParams) {
+            const params = extraParams || new URLSearchParams();
+            params.set('prefix', prefix || '');
+            return `${base}/${encodeURIComponent(bucket)}/_?${params.toString()}`;
+        }
+
+        // Build a key-based URL (object info/download/preview/...) carrying the
+        // key as a '?key=' query param so leading-slash keys survive intact.
+        // `tail` is an optional path suffix the route expects after the key
+        // segment (e.g. '/versions'); we still send a harmless path segment so
+        // the route matches, but the backend reads the real key from '?key='.
+        function keyUrl(base, bucket, key, tail, extraParams) {
+            const params = extraParams || new URLSearchParams();
+            params.set('key', key || '');
+            const t = tail || '';
+            return `${base}/${encodeURIComponent(bucket)}/_${t}?${params.toString()}`;
+        }
+
+        function isPotentialAsciiText(filename) {
+            // Common text file extensions
+            const textExtensions = [
+                '.txt', '.log', '.md', '.csv', '.json', '.xml', '.yml', '.yaml',
+                '.ini', '.cfg', '.conf', '.config', '.env', '.properties',
+                '.sh', '.bash', '.zsh', '.py', '.js', '.html', '.htm', '.css',
+                '.sql', '.r', '.pl', '.rb', '.php', '.java', '.cpp', '.c', '.h',
+                '.cs', '.vb', '.ps1', '.bat', '.cmd', '.reg', '.inf', '.sys'
+            ];
+
+            const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+            return textExtensions.includes(ext);
+        }
+
+        function createObjectItem(obj) {
+            console.log('Creating object item:', obj);
+            if (obj.is_delete_marker) {
+                console.log('Creating delete marker item:', obj);
+                const item = document.createElement('div');
+                item.className = 'd-flex align-items-center p-2 border-bottom bg-light';
+                item.setAttribute('data-object-key', obj.key + ':' + obj.version_id);
+                item.innerHTML = `
+                    <div class="flex-grow-1 text-danger" style="cursor: not-allowed;">
+                        <i class="fas fa-trash-alt me-2 text-danger"></i>
+                        <span><b>Delete Marker:</b> ${esc(obj.name)}</span>
+                        <small class="text-muted ms-2">${obj.last_modified ? esc(new Date(obj.last_modified).toLocaleString()) : ''}</small>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success" onclick="restoreDeleteMarker('${escapeJsString(obj.key)}', '${escapeJsString(obj.version_id)}')" title="Remove delete marker and restore object">
+                            <i class="fas fa-undo"></i> Restore
+                        </button>
+                        <button class="btn btn-danger" onclick="permanentlyDeleteObject('${escapeJsString(obj.key)}')" title="Delete object and ALL its versions permanently (irreversible)">
+                            <i class="fas fa-fire-alt"></i> Permanently Delete
+                        </button>
+                    </div>
+                `;
+                return item;
+            }
+            const item = document.createElement('div');
+            item.className = 'd-flex align-items-center p-2 border-bottom';
+            if (!obj.is_folder) {
+                item.setAttribute('data-object-key', obj.key);
+            }
+            const icon = esc(obj.is_folder ? 'fas fa-folder text-warning' : obj.icon_class || 'fas fa-file');
+            const clickAction = obj.is_folder ?
+                `onclick=\"navigateTo('${escapeJsString(obj.key)}')\"` :
+                `onclick=\"showObjectDetails('${escapeJsString(obj.key)}')\"`;
+            const versionIndicator = (!obj.is_folder && obj.versions && obj.versions.length > 1) ?
+                `<span class=\"badge bg-info ms-1\" title=\"${obj.versions.length} versions\"><i class=\"fas fa-history\"></i> ${obj.versions.length}</span>` : '';
+            const metadataIndicator = (!obj.is_folder && obj.metadata && Object.keys(obj.metadata).length > 0) ?
+                `<span class=\"badge bg-warning ms-1\" title=\"Has metadata\"><i class=\"fas fa-tags\"></i></span>` : '';
+            const asciiIndicator = (!obj.is_folder && isPotentialAsciiText(obj.name)) ?
+                `<span class=\"badge bg-success ms-1\" title=\"Potential ASCII text file\"><i class=\"fas fa-file-lines\"></i></span>` : '';
+            // Add checkbox for files
+            const checkbox = !obj.is_folder ? `<input type='checkbox' class='form-check-input me-2 object-checkbox' data-key='${esc(obj.key)}' onchange='toggleObjectSelection(this, "${escapeJsString(obj.key)}")' ${selectedObjects.has(obj.key) ? 'checked' : ''}>` : '';
+            item.innerHTML = `
+                ${checkbox}
+                <div class=\"flex-grow-1\" ${clickAction} style=\"cursor: pointer;\">
+                    <i class=\"${icon} me-2\"></i>
+                    <span>${esc(obj.name)}</span>
+                    ${isSearchMode && obj.path ? `<small class="text-muted ms-1">${esc(obj.path)}/</small>` : ''}
+                    ${versionIndicator}
+                    ${metadataIndicator}
+                    ${asciiIndicator}
+                    ${!obj.is_folder ? `<small class=\"text-muted ms-2\">${esc(obj.size_formatted)}</small>` : ''}
+                </div>
+                ${!obj.is_folder ? `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="previewObject('${escapeJsString(obj.key)}')" title="${isPotentialAsciiText(obj.name) ? 'Preview (ASCII detection enabled)' : 'Preview'}">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="downloadObject('${escapeJsString(obj.key)}')">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteObject('${escapeJsString(obj.key)}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                ` : ''}
+            `;
+            return item;
+        }
+
+        async function showObjectDetails(key) {
+            try {
+                const response = await fetch(keyUrl('/object', currentBucket, key));
+                const obj = await response.json();
+
+                if (response.ok) {
+                    const modalBody = document.getElementById('object-modal-body');
+                    let versionsHtml = '';
+
+                    // Check if bucket has versioning enabled and object has versions
+                    if (obj.versions && obj.versions.length > 1) {
+                        versionsHtml = `
+                            <hr>
+                            <h6>Object Versions (${obj.versions.length} versions)</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Version</th>
+                                            <th>Size</th>
+                                            <th>Last Modified</th>
+                                            <th>Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+
+                        obj.versions.forEach(version => {
+                            const isLatest = version.is_latest ? '<span class="badge bg-success">Latest</span>' : '';
+                            const lastModified = new Date(version.last_modified).toLocaleString();
+                            const sizeFormatted = formatFileSize(version.size);
+
+                            versionsHtml += `
+                                <tr>
+                                    <td><code>${esc(version.version_id)}</code></td>
+                                    <td>${sizeFormatted}</td>
+                                    <td>${lastModified}</td>
+                                    <td>${isLatest}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="downloadObjectVersion('${escapeJsString(key)}', '${escapeJsString(version.version_id)}')">
+                                            <i class="fas fa-download"></i> Download
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+
+                        versionsHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    }
+
+                    // Generate metadata HTML if object has metadata
+                    let metadataHtml = '';
+                    if (obj.metadata && Object.keys(obj.metadata).length > 0) {
+                        metadataHtml = `
+                            <hr>
+                            <h6>Object Metadata (${Object.keys(obj.metadata).length} items)</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Key</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+
+                        Object.entries(obj.metadata).forEach(([key, value]) => {
+                            metadataHtml += `
+                                <tr>
+                                    <td><code>${esc(key)}</code></td>
+                                    <td>${esc(value)}</td>
+                                </tr>
+                            `;
+                        });
+
+                        metadataHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    }
+
+
+                    // Presigned URL box: a link anyone can download with, no credentials.
+                    presignKey = obj.key;
+                    const presignedHtml = `
+                        <hr>
+                        <h6><i class="fas fa-link me-1"></i>Presigned URL <small class="text-muted">(download without credentials)</small></h6>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-sm-5">
+                                <label class="form-label mb-1" for="presign-ttl">Valid for</label>
+                                <select class="form-select form-select-sm" id="presign-ttl" onchange="onPresignTtlChange()">
+                                    <option value="300">5 minutes</option>
+                                    <option value="3600" selected>1 hour</option>
+                                    <option value="21600">6 hours</option>
+                                    <option value="86400">1 day</option>
+                                    <option value="604800">7 days (maximum)</option>
+                                    <option value="custom">Custom...</option>
+                                </select>
+                            </div>
+                            <div class="col-sm-4 d-none" id="presign-custom-wrap">
+                                <label class="form-label mb-1" for="presign-custom">Minutes</label>
+                                <input type="number" class="form-control form-control-sm" id="presign-custom" min="1" max="10080" step="1" value="60">
+                            </div>
+                            <div class="col-sm-3">
+                                <button class="btn btn-primary btn-sm w-100" onclick="generatePresignedUrl()">
+                                    <i class="fas fa-link"></i> Generate
+                                </button>
+                            </div>
+                        </div>
+                        <div id="presign-result" class="mt-2 d-none">
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="presign-url" readonly>
+                                <button class="btn btn-outline-secondary" onclick="copyPresignedUrl()" title="Copy to clipboard">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <a class="btn btn-outline-secondary" id="presign-open" href="#" target="_blank" rel="noopener" title="Open in a new tab">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                            </div>
+                            <small class="text-muted" id="presign-expiry"></small>
+                        </div>
+                        <div id="presign-error" class="text-danger small mt-1 d-none"></div>
+                    `;
+
+                    modalBody.innerHTML = `
+                        <dl class="row">
+                            <dt class="col-sm-3">Name:</dt>
+                            <dd class="col-sm-9">${esc(obj.name)}</dd>
+                            
+                            <dt class="col-sm-3">Full Key:</dt>
+                            <dd class="col-sm-9"><code>${esc(obj.key)}</code></dd>
+                            
+                            <dt class="col-sm-3">Size:</dt>
+                            <dd class="col-sm-9">${esc(obj.size_formatted)}</dd>
+                            
+                            <dt class="col-sm-3">Type:</dt>
+                            <dd class="col-sm-9">${esc(obj.content_type || 'N/A')}</dd>
+                            
+                            <dt class="col-sm-3">Last modified:</dt>
+                            <dd class="col-sm-9">${esc(obj.last_modified_formatted)}</dd>
+                            
+                            <dt class="col-sm-3">ETag:</dt>
+                            <dd class="col-sm-9"><code>${esc(obj.etag)}</code></dd>
+                            
+                            <dt class="col-sm-3">Storage Class:</dt>
+                            <dd class="col-sm-9">${esc(obj.storage_class || 'STANDARD')}</dd>
+                            ${obj.tags && Object.keys(obj.tags).length ? `<dt class="col-sm-3">Tags:</dt><dd class="col-sm-9">${Object.entries(obj.tags).map(([k, v]) => `<span class="badge bg-secondary me-1">${esc(k)}=${esc(v)}</span>`).join('')}</dd>` : ''}
+                        </dl>
+                        ${metadataHtml}
+                        ${presignedHtml}
+                        ${versionsHtml}
+                    `;
+
+                    new bootstrap.Modal(document.getElementById('objectModal')).show();
+                } else {
+                    alert('Error: ' + obj.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Key the presigned-URL box of the object modal is bound to.
+        let presignKey = null;
+
+        function onPresignTtlChange() {
+            const custom = document.getElementById('presign-ttl').value === 'custom';
+            document.getElementById('presign-custom-wrap').classList.toggle('d-none', !custom);
+        }
+
+        function presignTtlSeconds() {
+            const select = document.getElementById('presign-ttl');
+            if (select.value !== 'custom') return parseInt(select.value, 10);
+            const minutes = parseInt(document.getElementById('presign-custom').value, 10);
+            return minutes > 0 ? minutes * 60 : null;
+        }
+
+        async function generatePresignedUrl() {
+            const errorBox = document.getElementById('presign-error');
+            const resultBox = document.getElementById('presign-result');
+            errorBox.classList.add('d-none');
+
+            const expiresIn = presignTtlSeconds();
+            // 7 days is the hard limit for a SigV4 presigned URL.
+            if (!expiresIn || expiresIn > 604800) {
+                errorBox.textContent = 'Choose a duration between 1 minute and 7 days.';
+                errorBox.classList.remove('d-none');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/presigned-url/${encodeURIComponent(currentBucket)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: presignKey, expires_in: expiresIn })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Could not generate the URL');
+
+                document.getElementById('presign-url').value = result.url;
+                document.getElementById('presign-open').href = result.url;
+                document.getElementById('presign-expiry').textContent =
+                    `Expires ${new Date(result.expires_at).toLocaleString()} - anyone holding this link can download the object until then.`;
+                resultBox.classList.remove('d-none');
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.classList.remove('d-none');
+            }
+        }
+
+        async function copyPresignedUrl() {
+            const input = document.getElementById('presign-url');
+            try {
+                await navigator.clipboard.writeText(input.value);
+            } catch (e) {
+                // navigator.clipboard needs a secure context; fall back to the old way.
+                input.select();
+                document.execCommand('copy');
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        async function downloadObjectVersion(key, versionId) {
+            try {
+                const response = await fetch(keyUrl('/download', currentBucket, key, `/version/${encodeURIComponent(versionId)}`));
+                const result = await response.json();
+
+                if (response.ok) {
+                    window.open(result.download_url, '_blank');
+                    logAction(`Downloading version ${versionId} of ${key}`);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function downloadObject(key) {
+            try {
+                const response = await fetch(keyUrl('/download', currentBucket, key));
+                const result = await response.json();
+
+                if (response.ok) {
+                    window.open(result.download_url, '_blank');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteObject(key) {
+            if (!confirm(`Are you sure you want to delete "${key}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(keyUrl('/delete', currentBucket, key), {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    loadObjects();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deletePrefix(prefix) {
+            if (!currentBucket) {
+                alert('No bucket selected');
+                return;
+            }
+
+            const folderName = prefix.split('/').filter(p => p).pop() || prefix;
+
+            if (!confirm(`Are you sure you want to delete the folder "${folderName}" and ALL its contents?\n\nThis will permanently delete all objects under this prefix.`)) {
+                return;
+            }
+
+            logAction(`<span style='color:orange'>Listing objects in <b>${folderName}</b>...</span>`);
+
+            try {
+                // 1. List all objects first to know the total
+                const listResp = await fetch(prefixUrl('/list-recursive', currentBucket, prefix));
+                const listResult = await listResp.json();
+                if (!listResp.ok) throw new Error(listResult.error || 'Error listing objects');
+
+                const keys = (listResult.objects || []).map(o => o.key);
+                const total = keys.length;
+
+                if (total === 0) {
+                    logAction(`Folder "${folderName}" is empty or already deleted`);
+                    loadObjects();
+                    return;
+                }
+
+                // 2. Create task with known total
+                const taskId = taskManager.create(`Deleting: ${folderName}`, total);
+                logAction(`<span style='color:orange'>Deleting <b>${total}</b> object(s) from <b>${folderName}</b>...</span>`);
+
+                // 3. Delete in batches of 100 updating the task after each batch
+                const BATCH_SIZE = 100;
+                let totalDeleted = 0;
+                let totalErrors = 0;
+
+                for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+                    const batch = keys.slice(i, i + BATCH_SIZE);
+                    const resp = await fetch(`/bulk-delete/${encodeURIComponent(currentBucket)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keys: batch })
+                    });
+                    const res = await resp.json();
+                    totalDeleted += res.deleted_count || 0;
+                    totalErrors += res.error_count || 0;
+
+                    // Mark each deleted file as done in the task
+                    for (let j = 0; j < (res.deleted_count || 0); j++) taskManager.fileComplete(taskId, true);
+                    for (let j = 0; j < (res.error_count || 0); j++) taskManager.fileComplete(taskId, false);
+                }
+
+                taskManager.finish(taskId);
+
+                const msg = totalErrors > 0
+                    ? `Deleted ${totalDeleted} of ${total} objects (${totalErrors} errors) from "${folderName}"`
+                    : `Successfully deleted ${totalDeleted} object(s) from "${folderName}"`;
+                logAction(`<span style='color:${totalErrors > 0 ? "orange" : "green"}'>${msg}</span>`);
+
+                loadObjects();
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+                logAction(`<span style='color:red'>Error deleting folder "${folderName}": ${error.message}</span>`);
+            }
+        }
+
+        function refreshBuckets() {
+            loadBuckets();
+        }
+
+        // Upload functionality
+        function showUploadModal() {
+            if (!currentBucket) {
+                alert('Please select a bucket first');
+                return;
+            }
+
+            // Set bucket name in modal
+            document.getElementById('upload-bucket-name').textContent = currentBucket;
+
+            // Set current prefix
+            document.getElementById('upload-prefix').value = currentPrefix;
+
+            // Reset form
+            document.getElementById('upload-form').reset();
+            document.getElementById('upload-progress-list').innerHTML = '';
+            document.getElementById('upload-status').innerHTML = '';
+
+            // Show modal
+            new bootstrap.Modal(document.getElementById('uploadModal')).show();
+        }
+
+        function updateUploadFileList() {
+            const fileInput = document.getElementById('upload-file');
+            const folderInput = document.getElementById('upload-folder');
+            const list = document.getElementById('upload-progress-list');
+            const countDiv = document.getElementById('selected-files-count');
+
+            list.innerHTML = '';
+            let totalFiles = 0;
+
+            // Process files from both inputs
+            const allFiles = [
+                ...(fileInput.files || []),
+                ...(folderInput.files || [])
+            ];
+
+            totalFiles = allFiles.length;
+
+            if (totalFiles > 0) {
+                countDiv.textContent = `${totalFiles} file(s) selected`;
+                // Show first 10 files only to avoid UI lag
+                const displayFiles = allFiles.slice(0, 10);
+
+                for (const file of displayFiles) {
+                    const item = document.createElement('div');
+                    item.className = 'mb-2';
+                    const relPath = file.webkitRelativePath || file.name;
+                    item.innerHTML = `<strong>${esc(relPath)}</strong> <span class='text-muted'>(${formatFileSize(file.size)})</span> <div class='progress'><div class='progress-bar' role='progressbar' style='width:0%'></div></div><div class='upload-speed text-muted small'></div>`;
+                    list.appendChild(item);
+                }
+
+                if (totalFiles > 10) {
+                    const more = document.createElement('div');
+                    more.className = 'text-muted small fst-italic';
+                    more.textContent = `...and ${totalFiles - 10} more files`;
+                    list.appendChild(more);
+                }
+            } else {
+                countDiv.textContent = '';
+            }
+        }
+
+        // ── Task Manager ──────────────────────────────────────────────────────
+        const taskManager = {
+            tasks: {},
+            nextId: 1,
+
+            create(label, total) {
+                const id = this.nextId++;
+                this.tasks[id] = { label, total, done: 0, failed: 0, failedItems: [], startTime: Date.now(), bytesTotal: 0, bytesDone: 0, finished: false };
+                this._render();
+                document.getElementById('tasks-btn').style.display = '';
+                document.getElementById('tasks-panel').style.display = '';
+                return id;
+            },
+
+            progress(id, bytesDone, bytesTotal) {
+                const t = this.tasks[id];
+                if (!t) return;
+                t.bytesDone = (t.bytesDone || 0) + bytesDone;
+                t.bytesTotal = (t.bytesTotal || 0) + bytesTotal;
+                this._render();
+            },
+
+            fileComplete(id, success, name) {
+                const t = this.tasks[id];
+                if (!t) return;
+                if (success) {
+                    t.done++;
+                } else {
+                    t.failed++;
+                    if (name) t.failedItems.push(name);
+                }
+                this._render();
+            },
+
+            finish(id) {
+                const t = this.tasks[id];
+                if (!t) return;
+                t.finished = true;
+                this._render();
+                // Keep failures visible longer (30s), successes auto-remove after 8s
+                const delay = t.failed > 0 ? 30000 : 8000;
+                setTimeout(() => { delete this.tasks[id]; this._render(); }, delay);
+            },
+
+            _activeTasks() {
+                return Object.values(this.tasks).filter(t => !t.finished).length;
+            },
+
+            _render() {
+                const list = document.getElementById('tasks-list');
+                const badge = document.getElementById('tasks-badge');
+                const active = this._activeTasks();
+                badge.textContent = active;
+                badge.className = active > 0 ? 'badge bg-warning text-dark ms-1' : 'badge bg-secondary ms-1';
+
+                const ids = Object.keys(this.tasks);
+                if (ids.length === 0) {
+                    list.innerHTML = '<div class="text-muted text-center small py-2">No active tasks</div>';
+                    document.getElementById('tasks-btn').style.display = 'none';
+                    document.getElementById('tasks-panel').style.display = 'none';
+                    return;
+                }
+
+                list.innerHTML = ids.map(id => {
+                    const t = this.tasks[id];
+                    const pct = t.total > 0 ? Math.round((t.done + t.failed) / t.total * 100) : 0;
+                    const elapsed = (Date.now() - t.startTime) / 1000;
+                    const speed = elapsed > 0 ? t.bytesDone / elapsed : 0;
+                    const speedStr = speed > 0 ? formatFileSize(speed) + '/s' : '';
+                    const barClass = t.finished ? (t.failed > 0 ? 'bg-warning' : 'bg-success') : 'bg-primary progress-bar-striped progress-bar-animated';
+                    const statusIcon = t.finished
+                        ? (t.failed > 0 ? '<i class="fas fa-exclamation-triangle text-warning me-1"></i>' : '<i class="fas fa-check-circle text-success me-1"></i>')
+                        : '<i class="fas fa-spinner fa-spin text-primary me-1"></i>';
+                    const failBadge = t.failed > 0 ? `<span class="badge bg-danger ms-1">${t.failed} failed</span>` : '';
+
+                    // Failed items list (only when finished and there are failures)
+                    let failedSection = '';
+                    if (t.finished && t.failedItems.length > 0) {
+                        const failedRows = t.failedItems.map(name =>
+                            `<div class="text-truncate" style="max-width:300px;" title="${esc(name)}">
+                                <i class="fas fa-times-circle text-danger me-1"></i><small>${esc(name)}</small>
+                            </div>`
+                        ).join('');
+                        failedSection = `
+                            <div class="mt-2 pt-2 border-top">
+                                <small class="text-danger fw-bold d-block mb-1">
+                                    <i class="fas fa-exclamation-circle me-1"></i>Failed files:
+                                </small>
+                                <div style="max-height:120px; overflow-y:auto; font-size:0.75rem;">
+                                    ${failedRows}
+                                </div>
+                            </div>`;
+                    }
+
+                    return `
+                        <div class="p-2 mb-1 task-card rounded border${t.failed > 0 && t.finished ? ' border-warning' : ''}">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="fw-bold text-truncate" style="max-width:230px;">${statusIcon}${esc(t.label)}</small>
+                                <small class="text-muted ms-1 text-nowrap">${t.done}/${t.total}${failBadge}</small>
+                            </div>
+                            <div class="progress" style="height:10px;">
+                                <div class="progress-bar ${barClass}" role="progressbar" style="width:${pct}%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-1">
+                                <small class="text-muted">${pct}%</small>
+                                <small class="text-muted">${speedStr}</small>
+                            </div>
+                            ${failedSection}
+                        </div>`;
+                }).join('');
+            }
+        };
+
+        function toggleTasksPanel() {
+            const panel = document.getElementById('tasks-panel');
+            const body = document.getElementById('tasks-list');
+            const header = panel.querySelector('.card-header button i');
+            if (body.style.display === 'none') {
+                body.style.display = '';
+                header.className = 'fas fa-minus';
+            } else {
+                body.style.display = 'none';
+                header.className = 'fas fa-plus';
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('upload-file');
+            const folderInput = document.getElementById('upload-folder');
+            const keyInput = document.getElementById('upload-key');
+            const prefixInput = document.getElementById('upload-prefix');
+            const list = document.getElementById('upload-progress-list');
+
+            // Combine files from both inputs
+            const files = [
+                ...(fileInput.files || []),
+                ...(folderInput.files || [])
+            ];
+
+            if (!files.length) {
+                alert('Please select file(s) or a directory to upload');
+                return;
+            }
+
+            // Clear list and show progress
+            list.innerHTML = '';
+
+            // Determine task label
+            const folderName = folderInput.files && folderInput.files.length > 0
+                ? (folderInput.files[0].webkitRelativePath.split('/')[0] || 'folder')
+                : null;
+            const taskLabel = files.length === 1
+                ? files[0].name
+                : (folderName ? `Folder: ${folderName}` : `${files.length} files`);
+
+            // Create global task
+            const taskId = taskManager.create(`Uploading ${taskLabel}`, files.length);
+
+            // Create progress bars for first N files visible in modal (limit to avoid DOM overload)
+            const maxVisible = 50;
+            const progressBars = [];
+
+            for (let i = 0; i < Math.min(files.length, maxVisible); i++) {
+                const file = files[i];
+                const relPath = file.webkitRelativePath || file.name;
+                const item = document.createElement('div');
+                item.className = 'mb-2';
+                item.innerHTML = `<strong>${esc(relPath)}</strong> <span class='text-muted'>(${formatFileSize(file.size)})</span> <div class='progress'><div class='progress-bar' role='progressbar' style='width:0%'></div></div><div class='upload-speed text-muted small'></div>`;
+                list.appendChild(item);
+                progressBars.push(item);
+            }
+
+            if (files.length > maxVisible) {
+                const more = document.createElement('div');
+                more.className = 'text-muted small fst-italic mt-1';
+                more.textContent = `+ ${files.length - maxVisible} more files — see Tasks panel for overall progress`;
+                list.appendChild(more);
+            }
+
+            // Upload files in parallel with concurrency limit
+            const CONCURRENT_UPLOADS = (window.appSettings && window.appSettings.concurrent_uploads) || 5;
+            let successCount = 0;
+            let failCount = 0;
+
+            // Function to upload a single file
+            const uploadSingleFile = async (i) => {
+                const file = files[i];
+                const relPath = file.webkitRelativePath || file.name;
+
+                // Get UI elements if visible in modal
+                let progressBar = null;
+                let speedDiv = null;
+                if (i < maxVisible) {
+                    progressBar = progressBars[i].querySelector('.progress-bar');
+                    speedDiv = progressBars[i].querySelector('.upload-speed');
+                }
+
+                const customKey = keyInput.value.trim();
+                const prefix = prefixInput.value;
+
+                let finalKey;
+                if (files.length > 1) {
+                    finalKey = prefix ? prefix + relPath : relPath;
+                } else {
+                    finalKey = customKey ? (prefix ? prefix + customKey : customKey) : (prefix ? prefix + relPath : relPath);
+                }
+                finalKey = finalKey.replace(/\\/g, '/');
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('key', finalKey);
+
+                try {
+                    await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', `/upload/${encodeURIComponent(currentBucket)}`);
+                        xhr.upload.onprogress = function (e) {
+                            if (e.lengthComputable) {
+                                // Update modal progress bar
+                                if (progressBar) {
+                                    const percent = (e.loaded / e.total) * 100;
+                                    progressBar.style.width = percent + '%';
+                                    progressBar.textContent = percent.toFixed(1) + '%';
+                                }
+                                // Update global task speed
+                                const now = Date.now();
+                                if (!xhr._lastTime) { xhr._lastTime = now; xhr._lastLoaded = 0; }
+                                const dt = (now - xhr._lastTime) / 1000;
+                                const ds = e.loaded - xhr._lastLoaded;
+                                if (dt > 0.5) {
+                                    taskManager.progress(taskId, ds, e.total);
+                                    if (speedDiv) speedDiv.textContent = 'Speed: ' + formatFileSize(ds / dt) + '/s';
+                                    xhr._lastTime = now;
+                                    xhr._lastLoaded = e.loaded;
+                                }
+                            }
+                        };
+                        xhr.onload = function () {
+                            if (xhr.status === 200) {
+                                successCount++;
+                                taskManager.fileComplete(taskId, true);
+                                if (progressBar) {
+                                    progressBar.style.width = '100%';
+                                    progressBar.textContent = 'Done';
+                                    progressBar.classList.remove('bg-danger');
+                                    progressBar.classList.add('bg-success');
+                                    if (speedDiv) speedDiv.textContent = 'Completed';
+                                }
+                                resolve();
+                            } else {
+                                failCount++;
+                                taskManager.fileComplete(taskId, false, relPath);
+                                if (progressBar) {
+                                    progressBar.style.width = '100%';
+                                    progressBar.textContent = 'Failed';
+                                    progressBar.classList.add('bg-danger');
+                                    if (speedDiv) speedDiv.textContent = 'Error';
+                                }
+                                reject(new Error(`HTTP ${xhr.status}`));
+                            }
+                        };
+                        xhr.onerror = function () {
+                            failCount++;
+                            taskManager.fileComplete(taskId, false, relPath);
+                            if (progressBar) {
+                                progressBar.style.width = '100%';
+                                progressBar.textContent = 'Failed';
+                                progressBar.classList.add('bg-danger');
+                                if (speedDiv) speedDiv.textContent = 'Error';
+                            }
+                            reject(new Error('Network error'));
+                        };
+                        xhr.send(formData);
+                    });
+                } catch (e) {
+                    console.error(`Failed to upload ${relPath}:`, e);
+                }
+            };
+
+            // Process files in parallel batches
+            const uploadPromises = [];
+            for (let i = 0; i < files.length; i++) {
+                uploadPromises.push(uploadSingleFile(i));
+                if (uploadPromises.length >= CONCURRENT_UPLOADS || i === files.length - 1) {
+                    await Promise.allSettled(uploadPromises.splice(0, uploadPromises.length));
+                }
+            }
+
+            taskManager.finish(taskId);
+            logAction(`Uploaded ${successCount} of ${files.length} file(s)${failCount > 0 ? ` (${failCount} failed)` : ''}.`);
+
+            setTimeout(() => {
+                loadObjects(true);
+                bootstrap.Modal.getInstance(document.getElementById('uploadModal')).hide();
+                fileInput.value = '';
+                folderInput.value = '';
+            }, 1000);
+        }
+
+        // Initialize event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // ... existing listeners ...
+            document.getElementById('upload-file').addEventListener('change', updateUploadFileList);
+            document.getElementById('upload-folder').addEventListener('change', updateUploadFileList);
+        });
+
+        async function downloadFolder(prefix) {
+            if (!currentBucket) return;
+
+            // Show loading toast or message
+            logAction(`Starting download for folder: ${prefix}`);
+
+            // Create a hidden link to trigger download
+            const link = document.createElement('a');
+            link.href = prefixUrl('/api/download-folder', currentBucket, prefix);
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function toggleDeleteMarkers() {
+            showDeleteMarkers = document.getElementById('toggle-delete-markers').checked;
+            console.log('Delete markers toggle:', showDeleteMarkers);
+            logAction(`<span style='color:blue'>Delete markers ${showDeleteMarkers ? 'enabled' : 'disabled'}</span>`);
+            loadObjects();
+        }
+
+        async function restoreDeleteMarker(key, versionId) {
+            if (!confirm('Are you sure you want to restore this deleted object? This will remove the delete marker and make the previous version current.')) return;
+            try {
+                const response = await fetch(keyUrl('/delete-marker', currentBucket, key, `/${encodeURIComponent(versionId)}`), { method: 'DELETE' });
+                const result = await response.json();
+                if (response.ok) {
+                    logAction(`<span style='color:green'>Delete marker removed. Object restored: <b>${key}</b></span>`);
+                    loadObjects();
+                } else {
+                    alert('Error restoring object: ' + result.error);
+                    logAction(`<span style='color:red'>Error: ${result.error}</span>`);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                logAction(`<span style='color:red'>Error: ${error.message}</span>`);
+            }
+        }
+
+        async function permanentlyDeleteObject(key) {
+            const name = key.split('/').pop() || key;
+            if (!confirm(`⚠️ PERMANENTLY DELETE\n\n"${name}"\n\nThis will delete the object and ALL its versions. This action is IRREVERSIBLE.\n\nAre you sure?`)) return;
+            if (!confirm(`Last confirmation:\n\nDelete "${name}" and all versions permanently?`)) return;
+            try {
+                const response = await fetch(keyUrl('/permanently-delete', currentBucket, key), { method: 'DELETE' });
+                const result = await response.json();
+                if (response.ok || response.status === 207) {
+                    const msg = result.error_count > 0
+                        ? `Partially deleted: ${result.deleted_count} versions removed, ${result.error_count} errors`
+                        : `Permanently deleted ${result.deleted_count} versions of <b>${name}</b>`;
+                    logAction(`<span style='color:${result.error_count > 0 ? "orange" : "green"}'>${msg}</span>`);
+                    loadObjects();
+                } else {
+                    alert('Error: ' + result.error);
+                    logAction(`<span style='color:red'>Error permanently deleting ${name}: ${result.error}</span>`);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                logAction(`<span style='color:red'>Error permanently deleting ${name}: ${error.message}</span>`);
+            }
+        }
+
+        function sanitizeFilename(name) {
+            return name.replace(/[<>:"/\\|?*]/g, '_').replace(/^\.+$/, '_').trim() || 'unnamed_file';
+        }
+
+        // ── Shared helper: expand selection to flat file list ────────────────
+        async function expandSelectionToFiles(keys) {
+            const files = [];
+            for (const key of keys) {
+                if (key.endsWith('/')) {
+                    const resp = await fetch(prefixUrl('/list-recursive', currentBucket, key));
+                    const data = await resp.json();
+                    if (resp.ok) files.push(...(data.objects || []).map(o => o.key));
+                } else {
+                    files.push(key);
+                }
+            }
+            return files;
+        }
+
+        // ── Helper: save a single file to a FileSystem directory handle ──────
+        async function saveFileToDir(dirHandle, key, basePrefix) {
+            let relPath = basePrefix && key.startsWith(basePrefix)
+                ? key.slice(basePrefix.length)
+                : key;
+            if (relPath.startsWith('/')) relPath = relPath.slice(1);
+
+            const parts = relPath.split('/');
+            let parent = dirHandle;
+            for (let i = 0; i < parts.length - 1; i++) {
+                if (parts[i]) parent = await parent.getDirectoryHandle(sanitizeFilename(parts[i]), { create: true });
+            }
+            const fileName = sanitizeFilename(parts[parts.length - 1]) || 'file';
+            const response = await fetch(keyUrl('/proxy-download', currentBucket, key));
+            if (!response.ok) throw new Error(`HTTP ${response.status} for ${key}`);
+            const blob = await response.blob();
+            const fileHandle = await parent.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+        }
+
+        // ── Download selected → Save to folder (File System Access API) ──────
+        async function downloadSelectedToFolder() {
+            const keys = Array.from(selectedObjects);
+            if (keys.length === 0) return;
+
+            let dirHandle;
+            try {
+                dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                alert('Could not open folder picker: ' + e.message);
+                return;
+            }
+
+            logAction('Listing selected files...');
+            const files = await expandSelectionToFiles(keys);
+            if (files.length === 0) { logAction('No files found in selection'); return; }
+
+            const taskId = taskManager.create(`Saving ${files.length} files to folder`, files.length);
+            logAction(`Saving <b>${files.length}</b> files to local folder...`);
+
+            // Determine common prefix to strip (if all keys share one)
+            const basePrefix = keys.length === 1 && keys[0].endsWith('/') ? keys[0] : '';
+
+            for (const key of files) {
+                try {
+                    await saveFileToDir(dirHandle, key, basePrefix);
+                    taskManager.fileComplete(taskId, true);
+                } catch (e) {
+                    console.error(`Failed to save ${key}:`, e);
+                    taskManager.fileComplete(taskId, false, key.split('/').pop() || key);
+                    logAction(`<span style='color:orange'>Warning: could not save ${key.split('/').pop()}</span>`);
+                }
+            }
+
+            taskManager.finish(taskId);
+            logAction(`<span style='color:green'>Saved ${files.length} file(s) to local folder.</span>`);
+        }
+
+        // ── Download selected → single ZIP file ──────────────────────────────
+        async function downloadSelectedObjects() {
+            const keys = Array.from(selectedObjects);
+            if (keys.length === 0) return;
+
+            // Single file (not a folder): direct proxy download, no ZIP needed
+            if (keys.length === 1 && !keys[0].endsWith('/')) {
+                await downloadObject(keys[0]);
+                clearSelection();
+                return;
+            }
+
+            const label = keys.length === 1
+                ? (keys[0].rstrip ? keys[0].rstrip('/') : keys[0].replace(/\/$/, '')).split('/').pop()
+                : `${keys.length} items`;
+            const taskId = taskManager.create(`Preparing ZIP: ${label}`, 1);
+            logAction(`Preparing ZIP for <b>${label}</b>...`);
+
+            try {
+                const response = await fetch(`/download-selected/${encodeURIComponent(currentBucket)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keys })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || `HTTP ${response.status}`);
+                }
+
+                // Get filename from Content-Disposition header if available
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const nameMatch = disposition.match(/filename="?([^"]+)"?/);
+                const zipName = nameMatch ? nameMatch[1] : 'selection.zip';
+
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = zipName;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+
+                taskManager.fileComplete(taskId, true);
+                taskManager.finish(taskId);
+                logAction(`<span style='color:green'>ZIP download started: <b>${zipName}</b></span>`);
+
+            } catch (e) {
+                taskManager.fileComplete(taskId, false, e.message);
+                taskManager.finish(taskId);
+                alert('Error creating ZIP: ' + e.message);
+                logAction(`<span style='color:red'>Error creating ZIP: ${e.message}</span>`);
+            }
+
+            clearSelection();
+        }
+
+        function clearSelection() {
+            selectedObjects.clear();
+            document.querySelectorAll('.object-checkbox').forEach(cb => cb.checked = false);
+            const sa = document.getElementById('select-all-objects');
+            if (sa) sa.checked = false;
+            updateSelectedCount();
+        }
+
+        async function previewObject(key) {
+            try {
+                const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+                modal.show();
+
+                const modalBody = document.getElementById('preview-modal-body');
+                document.getElementById('preview-modal-title').textContent = key.split('/').pop() || key;
+                modalBody.innerHTML = '<div class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading preview...</div>';
+
+                const response = await fetch(keyUrl('/preview', currentBucket, key));
+                const result = await response.json();
+
+                if (response.ok) {
+                    let previewHtml = result.html;
+
+                    // Add ASCII detection notice for files without specific extensions
+                    const filename = key.split('/').pop();
+                    if (result.type && result.type !== 'none') {
+                        previewHtml += `<div class="pv-plugin-tag">Preview plugin: <code>${esc(result.type)}</code></div>`;
+                    }
+
+                    modalBody.innerHTML = previewHtml;
+                    logAction(`Previewed object: ${key}`);
+                } else {
+                    modalBody.innerHTML = `<div class="alert alert-danger">Error: ${esc(result.error)}</div>`;
+                    logAction(`<span style='color:red'>Preview error for ${key}: ${result.error}</span>`);
+                }
+            } catch (error) {
+                const modalBody = document.getElementById('preview-modal-body');
+                modalBody.innerHTML = `<div class="alert alert-danger">Error: ${esc(error.message)}</div>`;
+                logAction(`<span style='color:red'>Preview error for ${key}: ${error.message}</span>`);
+            }
+        }
+
+        function searchFiles() {
+            const searchTerm = document.getElementById('search-input').value.trim();
+            const extensionFilter = document.getElementById('extension-filter').value;
+
+            if (!searchTerm && !extensionFilter) {
+                clearSearch();
+                return;
+            }
+
+            isSearchMode = true;
+            showLoading(true);
+            document.getElementById('object-list').innerHTML = '';
+            document.getElementById('object-pagination').style.display = 'none';
+
+            // Add visual indicator for search mode
+            const searchContainer = document.getElementById('search-container');
+            searchContainer.classList.add('border', 'border-primary', 'bg-light');
+
+            // Show search loading indicator
+            const searchStatus = document.getElementById('search-status');
+            const countSpan = document.getElementById('search-results-count');
+            searchStatus.style.display = 'block';
+            countSpan.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Searching...';
+
+            const searchQuery = new URLSearchParams();
+            if (searchTerm) searchQuery.append('q', searchTerm);
+            if (extensionFilter) searchQuery.append('extensions', extensionFilter);
+            if (currentPrefix) searchQuery.append('prefix', currentPrefix);
+
+            const url = `/search/${encodeURIComponent(currentBucket)}?${searchQuery.toString()}`;
+
+            logAction(`Searching for "${searchTerm}"${extensionFilter ? ` with filter: ${extensionFilter}` : ''}...`);
+
+            fetch(url)
+                .then(response => response.json())
+                .then(result => {
+                    showLoading(false);
+                    if (result.error) {
+                        alert('Search error: ' + result.error);
+                        logAction(`<span style='color:red'>Search error: ${result.error}</span>`);
+                        countSpan.innerHTML = `<span style='color:red'>Error: ${esc(result.error)}</span>`;
+                        return;
+                    }
+
+                    searchResults = result.objects || [];
+                    displaySearchResults(searchResults);
+
+                    countSpan.innerHTML = `<span style='color:green'>Found ${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}</span>`;
+
+                    logAction(`Search completed: ${searchResults.length} results found`);
+                })
+                .catch(error => {
+                    showLoading(false);
+                    alert('Search error: ' + error.message);
+                    logAction(`<span style='color:red'>Search error: ${error.message}</span>`);
+                    countSpan.innerHTML = `<span style='color:red'>Error: ${esc(error.message)}</span>`;
+                });
+        }
+
+        function displaySearchResults(objects) {
+            const objectList = document.getElementById('object-list');
+            objectList.innerHTML = '';
+
+            if (objects.length === 0) {
+                objectList.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-search fa-2x mb-3"></i>
+                        <p>No files found matching your search criteria.</p>
+                        <button class="btn btn-outline-primary" onclick="clearSearch()">
+                            <i class="fas fa-arrow-left"></i> Back to browsing
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort results by name
+            objects.sort((a, b) => a.key.localeCompare(b.key));
+
+            objects.forEach(obj => {
+                const item = createObjectItem(obj);
+                // Highlight search terms if any
+                const searchTerm = document.getElementById('search-input').value.trim();
+                if (searchTerm) {
+                    highlightSearchTerms(item, searchTerm);
+                }
+                objectList.appendChild(item);
+            });
+        }
+
+        function highlightSearchTerms(element, searchTerm) {
+            // Find all text nodes and highlight the search term
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+
+            const textNodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+                textNodes.push(node);
+            }
+
+            textNodes.forEach(textNode => {
+                const text = textNode.textContent;
+                const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                if (regex.test(text)) {
+                    const highlightedText = esc(text).replace(new RegExp(`(${esc(searchTerm).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark class="bg-warning">$1</mark>');
+                    const span = document.createElement('span');
+                    span.innerHTML = highlightedText;
+                    textNode.parentNode.replaceChild(span, textNode);
+                }
+            });
+        }
+
+        function clearSearch() {
+            isSearchMode = false;
+            searchResults = [];
+            document.getElementById('search-input').value = '';
+            document.getElementById('extension-filter').value = '';
+            document.getElementById('search-status').style.display = 'none';
+
+            // Remove visual indicator for search mode
+            const searchContainer = document.getElementById('search-container');
+            searchContainer.classList.remove('border', 'border-primary', 'bg-light');
+
+            currentContinuationToken = null;
+            window.nextContinuationToken = null;
+            currentPage = 1;
+            loadObjects();
+            logAction('Search cleared, returning to normal browsing');
+        }
+
+        function updatePagination(nextToken, isTruncated) {
+            const pagDiv = document.getElementById('object-pagination');
+            if (!isTruncated && !currentContinuationToken) {
+                pagDiv.style.display = 'none';
+                currentPage = 1;
+                return;
+            }
+
+            pagDiv.style.display = 'flex';
+            document.getElementById('page-prev').disabled = !currentContinuationToken;
+            document.getElementById('page-next').disabled = !isTruncated;
+
+            if (isTruncated) {
+                window.nextContinuationToken = nextToken;
+                document.getElementById('page-info').textContent = `Page ${currentPage} — more items available`;
+            } else {
+                window.nextContinuationToken = null;
+                document.getElementById('page-info').textContent = `Page ${currentPage} — last page`;
+            }
+        }
+
+        function changePage(delta) {
+            if (delta > 0 && !document.getElementById('page-next').disabled) {
+                currentContinuationToken = window.nextContinuationToken;
+                currentPage++;
+                loadObjects();
+            } else if (delta < 0 && currentContinuationToken) {
+                currentContinuationToken = null;
+                window.nextContinuationToken = null;
+                currentPage = 1;
+                loadObjects();
+            }
+        }
+
+        function selectBucket(bucketName) {
+            currentBucket = bucketName;
+            currentPrefix = '';
+            currentContinuationToken = null;
+            window.nextContinuationToken = null;
+            currentPage = 1;
+            updateBreadcrumb();
+            // Set the items per page selector to current value
+            document.getElementById('items-per-page').value = currentPerPage;
+            // Show upload button when bucket is selected
+            document.getElementById('upload-btn').style.display = 'inline-block';
+            loadObjects();
+            logAction(`Selected bucket: ${bucketName}`);
+        }
+
+        function navigateUp() {
+            // Remove trailing slash, then strip last path segment
+            const parts = currentPrefix.replace(/\/$/, '').split('/');
+            parts.pop();
+            navigateTo(parts.length > 0 ? parts.join('/') + '/' : '');
+        }
+
+        function navigateTo(prefix) {
+            if (prefix && !prefix.endsWith('/')) {
+                prefix += '/';
+            }
+            currentPrefix = prefix;
+            currentContinuationToken = null;
+            window.nextContinuationToken = null;
+            currentPage = 1;
+            updateBreadcrumb();
+            loadObjects();
+            logAction(`Navigated to: ${prefix}`);
+        }
+
+        function updateBreadcrumb() {
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = `<li class="breadcrumb-item"><a href="#" onclick="navigateTo('')"><i class="fas fa-box-archive me-1"></i>${esc(currentBucket)}</a></li>`;
+
+            if (currentPrefix) {
+                const parts = currentPrefix.split('/').filter(p => p);
+                // Preserve a leading slash so breadcrumbs for keys like
+                // '/data/sub/' rebuild '/data/' rather than 'data/'.
+                let currentPath = currentPrefix.startsWith('/') ? '/' : '';
+                parts.forEach(part => {
+                    currentPath += part + '/';
+                    const item = document.createElement('li');
+                    item.className = 'breadcrumb-item';
+                    item.innerHTML = `<a href="#" onclick="navigateTo('${escapeJsString(currentPath)}')">${esc(part)}</a>`;
+                    breadcrumb.appendChild(item);
+                });
+            }
+
+            // Add versioning information if available
+            if (currentBucket) {
+                fetch(`/bucket-info/${encodeURIComponent(currentBucket)}`)
+                    .then(response => response.json())
+                    .then(info => {
+                        if (info.versioning && info.versioning !== 'Unknown') {
+                            let versioningBadge = document.getElementById('bucket-versioning-badge');
+                            if (!versioningBadge) {
+                                versioningBadge = document.createElement('span');
+                                versioningBadge.id = 'bucket-versioning-badge';
+                                versioningBadge.className = `badge ms-2 ${info.versioning === 'Enabled' ? 'bg-success' : 'bg-secondary'}`;
+                                breadcrumb.appendChild(versioningBadge);
+                            }
+                            versioningBadge.textContent = `Versioning: ${info.versioning}`;
+                            versioningBadge.className = `badge ms-2 ${info.versioning === 'Enabled' ? 'bg-success' : 'bg-secondary'}`;
+                        }
+                    })
+                    .catch(() => { }); // Ignore errors
+            }
+        }
+
+        function updateSearchPlaceholder() {
+            const searchInput = document.getElementById('search-input');
+            if (isSearchMode) {
+                searchInput.placeholder = 'Searching...';
+            } else {
+                searchInput.placeholder = 'Search files in this bucket...';
+            }
+        }
+
+        function debounceSearch() {
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            searchTimeout = setTimeout(searchFiles, 500);
+        }
+
+        function changeItemsPerPage() {
+            const newPerPage = parseInt(document.getElementById('items-per-page').value);
+            if (newPerPage !== currentPerPage) {
+                currentPerPage = newPerPage;
+                currentContinuationToken = null; // Reset to first page
+                window.nextContinuationToken = null;
+                logAction(`Changed items per page to ${currentPerPage}`);
+                loadObjects();
+            }
+        }
+
+        async function goToLastPage() {
+            if (!currentBucket) return;
+
+            showLoading(true);
+            logAction(`Navigating to last page...`);
+
+            try {
+                // Start from the beginning and keep going until we reach the end
+                let continuationToken = null;
+                let lastToken = null;
+                let isTruncated = true;
+
+                while (isTruncated) {
+                    const params = new URLSearchParams();
+                    params.append('per_page', currentPerPage);
+                    if (continuationToken) {
+                        params.append('continuation_token', continuationToken);
+                    }
+                    const url = browseUrl(currentBucket, currentPrefix, params);
+
+                    const response = await fetch(url);
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        isTruncated = result.is_truncated;
+                        if (isTruncated) {
+                            lastToken = result.next_token;
+                            continuationToken = result.next_token;
+                        }
+                    } else {
+                        throw new Error(result.error);
+                    }
+                }
+
+                // Now load the last page using the last token we found
+                showLoading(false);
+                if (lastToken) {
+                    currentContinuationToken = lastToken;
+                    window.nextContinuationToken = null; // No next page after last
+                    loadObjects();
+                } else {
+                    // If no pagination was needed, just reload the first page
+                    currentContinuationToken = null;
+                    window.nextContinuationToken = null;
+                    loadObjects();
+                }
+
+                logAction(`Reached last page`);
+
+            } catch (error) {
+                showLoading(false);
+                alert('Error navigating to last page: ' + error.message);
+                logAction(`<span style='color:red'>Error: ${error.message}</span>`);
+            }
+        }
+
+        async function loadAdditionalInfo(objects) {
+            // Show loading indicator for additional info
+            const loadingIndicator = document.createElement('div');
+            loadingIndicator.id = 'additional-info-loading';
+            loadingIndicator.className = 'alert alert-info alert-sm mt-2';
+            loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading additional information (versions, metadata)...';
+
+            const objectList = document.getElementById('object-list');
+            objectList.appendChild(loadingIndicator);
+
+            try {
+                // Load versions and metadata in parallel
+                const promises = [];
+
+                // Check if bucket has versioning enabled
+                const bucketInfo = await getBucketInfo();
+                if (bucketInfo && bucketInfo.versioning === 'Enabled') {
+                    promises.push(fetchObjectVersions(objects));
+                }
+
+                // Always fetch metadata
+                promises.push(fetchObjectsMetadata(objects));
+
+                // Wait for all additional info to load
+                await Promise.all(promises);
+
+                // Update the display with the new information
+                updateObjectDisplay(objects);
+
+                logAction('Additional information loaded successfully');
+            } catch (error) {
+                console.warn('Error loading additional information:', error);
+                logAction('<span style="color:orange">Warning: Some additional information could not be loaded</span>');
+            } finally {
+                // Remove loading indicator
+                const indicator = document.getElementById('additional-info-loading');
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+        }
+
+        async function fetchObjectVersions(objects) {
+            // Check if bucket has versioning enabled
+            const bucketInfo = await getBucketInfo();
+            if (bucketInfo && bucketInfo.versioning === 'Enabled') {
+                // Fetch versions for each object in parallel
+                const versionPromises = objects.map(async (obj) => {
+                    if (!obj.is_folder) {
+                        try {
+                            const response = await fetch(keyUrl('/object', currentBucket, obj.key, '/versions'));
+                            if (response.ok) {
+                                const result = await response.json();
+                                obj.versions = result.versions;
+                            }
+                        } catch (error) {
+                            console.warn(`Failed to fetch versions for ${obj.key}:`, error);
+                        }
+                    }
+                });
+
+                await Promise.all(versionPromises);
+            }
+        }
+
+        async function fetchObjectsMetadata(objects) {
+            // Get non-folder objects
+            const fileObjects = objects.filter(obj => !obj.is_folder);
+            if (fileObjects.length === 0) return;
+
+            try {
+                const keys = fileObjects.map(obj => obj.key);
+                const response = await fetch(`/objects/${encodeURIComponent(currentBucket)}/metadata`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ keys: keys })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    const metadata = result.metadata;
+
+                    // Update objects with metadata
+                    fileObjects.forEach(obj => {
+                        if (metadata[obj.key]) {
+                            obj.metadata = metadata[obj.key];
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to fetch metadata for objects:', error);
+            }
+        }
+
+        function updateObjectDisplay(objects) {
+            // Update each object item with new metadata and version information
+            objects.forEach(obj => {
+                if (!obj.is_folder) {
+                    const itemElement = document.querySelector(`[data-object-key="${CSS.escape(obj.key)}"]`);
+                    if (itemElement) {
+                        // Update the item with new information
+                        const updatedItem = createObjectItem(obj);
+                        itemElement.innerHTML = updatedItem.innerHTML;
+                    }
+                }
+            });
+        }
+
+        async function getBucketInfo() {
+            try {
+                const response = await fetch(`/bucket-info/${encodeURIComponent(currentBucket)}`);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.warn('Failed to get bucket info:', error);
+            }
+            return null;
+        }
+
+        function toggleObjectSelection(checkbox, key) {
+            if (checkbox.checked) {
+                selectedObjects.add(key);
+            } else {
+                selectedObjects.delete(key);
+            }
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const count = selectedObjects.size;
+            document.getElementById('selected-count').textContent = count > 0 ? `${count} selected` : '';
+            document.getElementById('download-selected-btn').disabled = count === 0;
+            const fsBtn = document.getElementById('download-selected-fs-btn');
+            if (window.showDirectoryPicker) {
+                fsBtn.style.display = '';
+                fsBtn.disabled = count === 0;
+            }
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('select-all-objects');
+            const checkboxes = document.querySelectorAll('.object-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+                // Files use data-key, folders use value
+                const key = cb.getAttribute('data-key') || cb.value;
+                if (key && key !== 'on') {
+                    if (selectAll.checked) {
+                        selectedObjects.add(key);
+                    } else {
+                        selectedObjects.delete(key);
+                    }
+                }
+            });
+            updateSelectedCount();
+        }
+
+    </script>
+</body>
+
+</html>

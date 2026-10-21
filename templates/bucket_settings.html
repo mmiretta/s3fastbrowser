@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}Bucket Settings - {{ bucket_name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+            <i class="fas fa-cog text-secondary"></i> Settings: {{ bucket_name }}
+        </h2>
+        <a href="/" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Browser
+        </a>
+    </div>
+
+    <div class="row">
+        <!-- Bucket Policy -->
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Bucket Policy</h5>
+                    <div>
+                        <button class="btn btn-sm btn-primary" onclick="savePolicy()">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePolicy()">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="policy-loading" class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <textarea class="form-control font-monospace" id="policy-json" rows="15"
+                            style="font-size: 0.9em;"></textarea>
+                    </div>
+                    <div id="policy-status" class="alert mt-2" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lifecycle Configuration -->
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-recycle"></i> Lifecycle Configuration</h5>
+                    <div>
+                        <button class="btn btn-sm btn-primary" onclick="saveLifecycle()">
+                            <i class="fas fa-save"></i> Save
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteLifecycle()">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="lifecycle-loading" class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+
+                    <ul class="nav nav-tabs mb-3" id="lifecycleTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="json-tab" data-bs-toggle="tab"
+                                data-bs-target="#lifecycle-json-pane" type="button" role="tab">JSON Editor</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="view-tab" data-bs-toggle="tab"
+                                data-bs-target="#lifecycle-view-pane" type="button" role="tab">Table View</button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content" id="lifecycleTabContent">
+                        <div class="tab-pane fade show active" id="lifecycle-json-pane" role="tabpanel">
+                            <div class="form-group">
+                                <textarea class="form-control font-monospace" id="lifecycle-json" rows="15"
+                                    style="font-size: 0.9em;"></textarea>
+                                <div class="form-text text-muted">Enter the lifecycle configuration rules as a JSON
+                                    array.</div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="lifecycle-view-pane" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Status</th>
+                                            <th>Prefix</th>
+                                            <th>Expiration</th>
+                                            <th>Transitions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="lifecycle-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="lifecycle-empty-view" class="alert alert-info" style="display: none;">
+                                No lifecycle rules found.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="lifecycle-status" class="alert mt-2" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const bucketName = {{ bucket_name|tojson }};
+    const bucketPath = encodeURIComponent(bucketName);
+
+    document.addEventListener('DOMContentLoaded', function () {
+        loadBucketPolicy();
+        loadBucketLifecycle();
+    });
+
+    function esc(value) {
+        return String(value === undefined || value === null ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function showStatus(elementId, message, type) {
+        const el = document.getElementById(elementId);
+        el.className = `alert alert-${type} mt-2`;
+        el.textContent = message;
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 5000);
+    }
+
+    async function loadBucketPolicy() {
+        try {
+            const response = await fetch(`/api/bucket/${bucketPath}/policy`);
+            const result = await response.json();
+
+            document.getElementById('policy-loading').style.display = 'none';
+
+            if (result.error) {
+                // If error is NoSuchBucketPolicy, just show empty
+                if (result.error.includes('NoSuchBucketPolicy')) {
+                    document.getElementById('policy-json').value = '';
+                } else {
+                    showStatus('policy-status', result.error, 'danger');
+                }
+                return;
+            }
+
+            if (result.policy) {
+                document.getElementById('policy-json').value = JSON.stringify(result.policy, null, 4);
+            } else {
+                document.getElementById('policy-json').value = '';
+            }
+        } catch (error) {
+            document.getElementById('policy-loading').style.display = 'none';
+            showStatus('policy-status', 'Error loading policy: ' + error.message, 'danger');
+        }
+    }
+
+    async function savePolicy() {
+        const policyText = document.getElementById('policy-json').value.trim();
+        if (!policyText) {
+            showStatus('policy-status', 'Policy cannot be empty', 'warning');
+            return;
+        }
+
+        try {
+            // Validate JSON
+            const policy = JSON.parse(policyText);
+
+            const response = await fetch(`/api/bucket/${bucketPath}/policy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ policy: policy })
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+                showStatus('policy-status', 'Policy saved successfully', 'success');
+            } else {
+                showStatus('policy-status', 'Error saving policy: ' + result.error, 'danger');
+            }
+        } catch (e) {
+            showStatus('policy-status', 'Invalid JSON: ' + e.message, 'danger');
+        }
+    }
+
+    async function deletePolicy() {
+        if (!confirm('Are you sure you want to delete the bucket policy? This cannot be undone.')) return;
+
+        try {
+            const response = await fetch(`/api/bucket/${bucketPath}/policy`, {
+                method: 'DELETE'
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+                document.getElementById('policy-json').value = '';
+                showStatus('policy-status', 'Policy deleted successfully', 'success');
+            } else {
+                showStatus('policy-status', 'Error deleting policy: ' + result.error, 'danger');
+            }
+        } catch (error) {
+            showStatus('policy-status', 'Error deleting policy: ' + error.message, 'danger');
+        }
+    }
+
+    async function loadBucketLifecycle() {
+        try {
+            const response = await fetch(`/api/bucket/${bucketPath}/lifecycle`);
+            const result = await response.json();
+
+            document.getElementById('lifecycle-loading').style.display = 'none';
+
+            if (result.error) {
+                if (result.error.includes('NoSuchLifecycleConfiguration')) {
+                    document.getElementById('lifecycle-json').value = '';
+                    document.getElementById('lifecycle-empty-view').style.display = 'block';
+                } else {
+                    showStatus('lifecycle-status', result.error, 'danger');
+                }
+                return;
+            }
+
+            if (result.lifecycle) {
+                document.getElementById('lifecycle-json').value = JSON.stringify(result.lifecycle, null, 4);
+                updateLifecycleTable(result.lifecycle);
+            } else {
+                document.getElementById('lifecycle-json').value = '';
+                document.getElementById('lifecycle-empty-view').style.display = 'block';
+            }
+        } catch (error) {
+            document.getElementById('lifecycle-loading').style.display = 'none';
+            showStatus('lifecycle-status', 'Error loading lifecycle: ' + error.message, 'danger');
+        }
+    }
+
+    function updateLifecycleTable(rules) {
+        const tbody = document.getElementById('lifecycle-table-body');
+        tbody.innerHTML = '';
+
+        if (!rules || rules.length === 0) {
+            document.getElementById('lifecycle-empty-view').style.display = 'block';
+            return;
+        }
+
+        document.getElementById('lifecycle-empty-view').style.display = 'none';
+
+        rules.forEach(rule => {
+            const tr = document.createElement('tr');
+
+            // Format expiration
+            let expiration = '-';
+            if (rule.Expiration) {
+                if (rule.Expiration.Days) expiration = `${esc(rule.Expiration.Days)} days`;
+                else if (rule.Expiration.Date) expiration = new Date(rule.Expiration.Date).toLocaleDateString();
+            }
+
+            // Format transitions
+            let transitions = '-';
+            if (rule.Transitions) {
+                transitions = rule.Transitions.map(t => {
+                    if (t.Days) return `${esc(t.StorageClass)} after ${esc(t.Days)} days`;
+                    if (t.Date) return `${esc(t.StorageClass)} on ${new Date(t.Date).toLocaleDateString()}`;
+                    return esc(t.StorageClass);
+                }).join('<br>');
+            }
+
+            // Format filter/prefix
+            let prefix = '-';
+            if (rule.Filter) {
+                if (rule.Filter.Prefix) prefix = rule.Filter.Prefix;
+                else if (rule.Filter.And) prefix = 'Complex Filter';
+                else if (rule.Prefix) prefix = rule.Prefix; // Deprecated but possible
+            } else if (rule.Prefix) {
+                prefix = rule.Prefix;
+            }
+
+            tr.innerHTML = `
+                <td>${esc(rule.ID || '-')}</td>
+                <td><span class="badge ${rule.Status === 'Enabled' ? 'bg-success' : 'bg-secondary'}">${esc(rule.Status)}</span></td>
+                <td><code>${esc(prefix)}</code></td>
+                <td>${expiration}</td>
+                <td>${transitions}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function saveLifecycle() {
+        const rulesText = document.getElementById('lifecycle-json').value.trim();
+        if (!rulesText) {
+            showStatus('lifecycle-status', 'Rules cannot be empty', 'warning');
+            return;
+        }
+
+        try {
+            // Validate JSON
+            const rules = JSON.parse(rulesText);
+            if (!Array.isArray(rules)) {
+                showStatus('lifecycle-status', 'Lifecycle configuration must be a JSON array of rules', 'warning');
+                return;
+            }
+
+            const response = await fetch(`/api/bucket/${bucketPath}/lifecycle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rules: rules })
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+                showStatus('lifecycle-status', 'Lifecycle saved successfully', 'success');
+                updateLifecycleTable(rules);
+            } else {
+                showStatus('lifecycle-status', 'Error saving lifecycle: ' + result.error, 'danger');
+            }
+        } catch (e) {
+            showStatus('lifecycle-status', 'Invalid JSON: ' + e.message, 'danger');
+        }
+    }
+
+    async function deleteLifecycle() {
+        if (!confirm('Are you sure you want to delete the lifecycle configuration? This cannot be undone.')) return;
+
+        try {
+            const response = await fetch(`/api/bucket/${bucketPath}/lifecycle`, {
+                method: 'DELETE'
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+                document.getElementById('lifecycle-json').value = '';
+                updateLifecycleTable([]);
+                showStatus('lifecycle-status', 'Lifecycle deleted successfully', 'success');
+            } else {
+                showStatus('lifecycle-status', 'Error deleting lifecycle: ' + result.error, 'danger');
+            }
+        } catch (error) {
+            showStatus('lifecycle-status', 'Error deleting lifecycle: ' + error.message, 'danger');
+        }
+    }
+</script>
+{% endblock %}

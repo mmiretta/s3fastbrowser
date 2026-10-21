@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - S3FastBrowser{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-cog me-2"></i>Settings</h4>
+                </div>
+                <div class="card-body">
+                    <form id="settings-form">
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">Browser Options</h5>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="show_delete_markers"
+                                    name="show_delete_markers" {% if settings.show_delete_markers %}checked{% endif %}>
+                                <label class="form-check-label" for="show_delete_markers">Show Delete Markers</label>
+                                <div class="form-text">If enabled, deleted objects (delete markers) will be visible in
+                                    the browser.</div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="show_bucket_settings"
+                                    name="show_bucket_settings" {% if settings.show_bucket_settings %}checked{% endif
+                                    %}>
+                                <label class="form-check-label" for="show_bucket_settings">Show Bucket Settings
+                                    Icon</label>
+                                <div class="form-text">Show the settings (gear) icon next to buckets in the browser.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">Transfer Configuration</h5>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="multipart_threshold" class="form-label">Multipart Upload Threshold
+                                        (MB)</label>
+                                    <input type="number" class="form-control" id="multipart_threshold"
+                                        name="multipart_threshold" value="{{ settings.multipart_threshold }}" min="5"
+                                        max="5000">
+                                    <div class="form-text">Files larger than this will be uploaded in parts.</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="chunk_size" class="form-label">Chunk Size (MB)</label>
+                                    <input type="number" class="form-control" id="chunk_size" name="chunk_size"
+                                        value="{{ settings.chunk_size }}" min="5" max="5000">
+                                    <div class="form-text">Size of each part during multipart upload.</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="concurrent_uploads" class="form-label">
+                                    Concurrent Uploads: <span id="concurrent_uploads_value">{{
+                                        settings.concurrent_uploads or 5 }}</span>
+                                </label>
+                                <input type="range" class="form-range" id="concurrent_uploads" name="concurrent_uploads"
+                                    value="{{ settings.concurrent_uploads or 5 }}" min="1" max="10" step="1"
+                                    oninput="document.getElementById('concurrent_uploads_value').textContent = this.value">
+                                <div class="form-text">Number of files to upload simultaneously (1-10). Higher values =
+                                    faster uploads but more bandwidth usage.</div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="/" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Save Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const form = document.getElementById('settings-form');
+
+        async function saveSettings() {
+            const settings = {
+                show_delete_markers: document.getElementById('show_delete_markers').checked,
+                show_bucket_settings: document.getElementById('show_bucket_settings').checked,
+                multipart_threshold: parseInt(document.getElementById('multipart_threshold').value),
+                chunk_size: parseInt(document.getElementById('chunk_size').value),
+                concurrent_uploads: parseInt(document.getElementById('concurrent_uploads').value)
+            };
+
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert('Settings saved successfully!');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while saving settings.');
+            }
+        }
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            saveSettings();
+        });
+    });
+</script>
+{% endblock %}
